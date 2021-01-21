@@ -15,7 +15,7 @@
 
 begin:
         CLR  #$EE10, Y ; clearing mem 
-        STAB $16, Y ; Store B register data in memory  - aux memory 
+        STAB $16, Y ; Store B register data in memory  - aux memory -- word 
         LDD  $20, Y ; Load D register (A:B) from memory
 
 forloop:
