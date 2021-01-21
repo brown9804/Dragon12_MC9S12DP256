@@ -15,22 +15,24 @@
 
 
 begin:
+    CLRB 
     LDX  # DIRECCIONES
     LDY  # BUFFER
     LDD  # NODO ;because for 2500 need more than 8 bits 
     DECD        ; reloc -> D - 1 ... 0, 1, 2, 3, 4, 5, 6 
 
-forloop:
+move:
     LSLD        ; shift left 
     DECD        ; D - 1
     DECD        ; 2*(nodo-1)
-    LDD [D,X]   ; node number -> buffer 
+    LDX [D,X]   ; node number -> buffer 
+    LDAB #4
+    
+forloop:
     MOVW 2, X-, 2, Y+ ; moving two above and two below
+    DBNE B, forloop
     STY D,X     
     PULY        ; pull nodo num 
 
-next:
-    DBNE D, forloop ; stop when is more 2500 laps
-    
 end:
     JMP end
