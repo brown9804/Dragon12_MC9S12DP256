@@ -1,0 +1,175 @@
+
+as12, an absolute assembler for Motorola MCU's, version 1.2h
+
+                        ;       Autor:
+                        ; Brown Ramírez, Belinda
+                        ; timna.brown@ucr.ac.cr
+                        ; Jan, 2021
+                        
+                        ; 2 routines
+                        
+                        ;BIN-BCD: 12 bits binary using XS3 algorithm, binary number is in D
+                        ;and results goes to NUM_BCD from $1010 mem position
+                        
+                        ;BCD-BIN: Multiplication of decades and addition algorithm,
+                        ;BCD >= 9999 binary number is in D. Results are saved NUM_BIN
+                        ;from $1020.
+                        
+                        ; ----
+                        ; BIN value $1000-$1001
+                        ; BCD value $1002-$1003
+                        
+                        ; FYI -> program started in $2000
+                        
+                        ; 1. BIN to D accumulador.
+                        ; 2. BIN - BCD
+                        ; 3. BCD to D accumulador.
+                        ; 4. BCD - BIN
+                        
+                        ;##--------------------------------  DEFINITIONS ------------------------------------
+1000                    BIN: EQU $1000
+1002                    BCD: EQU $1002
+1010                    NUM_BCD: EQU $1010 ; BIN-BCD results from this position
+1020                    NUM_BIN: EQU $1020 ; BCD-BIN results from this position
+1000                    	ORG $1000 ; Flash ROM address for Dragon12+
+1000 00 05              	DW #5 ; send value
+1002                    	ORG $1002 ; Flash ROM address for Dragon12+
+1002 00 08              	DW #8 ; send value
+                        
+                        ;##--------------------------------  SPACE storage  ------------------------------------
+1100                    	ORG $1100 ; Flash ROM address for Dragon12+
+1100                    tail_val: DS 2
+1102                    B_val: DS 2
+                        
+                        ;##-------------------------------- MAIN ------------------------------------
+1104                    _init:
+2000                        ORG         $2000
+2000 cd 00 00               LDY #0
+2003 fc 10 00               LDD BIN
+2006 06 20 18               JMP _BIN_BCD
+                        
+2009                    BCDtoBIN:
+2009 cd 00 00               LDY #0
+200c ce 00 00               LDX #0
+200f fc 10 02               LDD BCD
+2012 06 20 84               JMP _BCD_BIN
+                        
+2015                    FINAL_END:
+2015 06 20 15               JMP FINAL_END
+                        
+                        ;##-------------------------------- DEF BIN-BCD ------------------------------------
+                        ;# STEPS:
+                        ;# 1. Find the decimal equivalent of the given binary number.
+                        ;# 2. Add +3 to each digit of decimal number.
+                        ;# 4. Convert the newly obtained decimal number back to binary
+                        ;# number to get required excess-3 equivalent.
+                        
+2018                    _BIN_BCD:
+2018 ce 00 0f               LDX #15
+201b 79 10 10               CLR NUM_BCD
+201e 79 10 11               CLR NUM_BCD+1
+2021 fd 10 10               LDY NUM_BCD
+                        
+2024                    COMP4Bytes:
+2024 59                 	ASLD       ; shift double
+2025 75 10 11               ROL NUM_BCD+1
+2028 75 10 10               ROL NUM_BCD
+202b 7c 11 00               STD tail_val
+202e fc 10 11               LDD NUM_BCD+1
+2031 c4 0f                 	ANDB #$0F
+2033 c1 05                 	CMPB #5
+2035 25 02                 	BCS COMP_B
+2037 cb 03              	ADDB #3
+                        
+2039                    COMP_B:
+2039 7b 11 02           	STAB B_val
+203c f6 10 11           	LDAB NUM_BCD+1
+203f 87                 	CLRA
+2040 c4 f0                  ANDB #$F0
+2042 c1 50                  CMPB #$50
+2044 25 03                 	BCS  COMP_C
+2046 c3 00 30               ADDD #$30 ; if B is $50
+                        
+2049                    COMP_C:
+2049 fb 11 02           	ADDB B_val
+204c 89 00              	ADCA #0
+204e 7b 10 11               STAB NUM_BCD+1
+2051 bb 10 10               ADDA NUM_BCD
+2054 7a 10 10               STAA NUM_BCD
+2057 f6 10 10               LDAB NUM_BCD
+205a c4 0f                  ANDB #$0F
+205c c1 05                  CMPB #5
+205e 25 03                  BCS  storeNUM_BCD
+2060 cb 03                  ADDB #3
+2062 87                     CLRA
+                        
+2063                    storeNUM_BCD:
+2063 7b 11 02               STAB B_val
+2066 f6 10 10               LDAB NUM_BCD
+2069 c4 f0                  ANDB #$F0
+206b fb 11 02               ADDB B_val
+206e 7b 10 10               STAB NUM_BCD
+2071 fc 11 00               LDD tail_val
+2074 09                     DEX
+2075 27 03                  BEQ X_0_value
+2077 06 20 24               JMP COMP4Bytes
+                        
+207a                    X_0_value:
+207a 59                     ASLD
+207b 75 10 11               ROL  NUM_BCD+1
+207e 75 10 10               ROL  NUM_BCD
+2081 06 20 09               JMP  BCDtoBIN
+                        
+                        
+                        ;##-------------------------------- DEF BCD-BIN ------------------------------------
+2084                    _BCD_BIN:
+2084 79 10 20               CLR  NUM_BIN
+2087 79 10 21               CLR  NUM_BIN+1
+                        
+208a                    _BCD_BIN_COMP4Bytes:
+208a c4 0f                  ANDB #$0F
+208c 7b 10 21               STAB NUM_BIN+1
+                        
+208f                    _BCD_BIN_COMP_B:
+208f f6 10 03               LDAB BCD+1
+2092 c4 f0                  ANDB #$F0
+                        
+2094                    _BCD_BIN_TranformB:
+2094 54                     LSRB ; B -> x0 to $0x
+2095 54                     LSRB
+2096 54                     LSRB
+2097 54                     LSRB
+2098 86 0a                  LDAA #10 ; A = B * 10
+209a 12                     MUL ; A:B
+209b fb 10 21               ADDB NUM_BIN+1
+209e 7b 10 21               STAB NUM_BIN+1
+                        
+20a1                    _BCD_BIN_COMP_C:
+20a1 b6 10 02               LDAA BCD
+20a4 84 0f                  ANDA #$0F
+20a6 c6 64                  LDAB #100
+20a8 12                     MUL
+20a9 f3 10 20               ADDD NUM_BIN
+20ac 7c 10 20               STD NUM_BIN
+                        
+20af                    _BCD_BIN_LAST_COMP:
+20af f6 10 02               LDAB BCD
+20b2 c4 f0                  ANDB #$F0
+                        
+20b4                    _BCD_BIN_TranformA:
+20b4 44                     LSRA ; A -> x0 to $0x
+20b5 44                     LSRA
+20b6 44                     LSRA
+20b7 44                     LSRA
+20b8 87                     CLRA
+20b9 cd 03 e8               LDY #1000 ; load index
+20bc 13                     EMUL
+20bd f3 10 20               ADDD NUM_BIN
+20c0 7c 10 20               STD NUM_BIN
+                        
+20c3                    _BCD_BIN_end:
+20c3 06 20 15               JMP FINAL_END
+
+Executed: Wed Jan 27 01:24:14 2021
+Total cycles: 227, Total bytes: 202
+Total errors: 0, Total warnings: 0
