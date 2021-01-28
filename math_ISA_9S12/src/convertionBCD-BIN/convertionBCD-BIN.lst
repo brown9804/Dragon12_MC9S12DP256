@@ -78,7 +78,7 @@ as12, an absolute assembler for Motorola MCU's, version 1.2h
 202e fc 10 11               LDD NUM_BCD+1
 2031 c4 0f                 	ANDB #$0F
 2033 c1 05                 	CMPB #5
-2035 25 02                 	BCS COMP_B
+2035 25 02                 	BLO COMP_B
 2037 cb 03              	ADDB #3
                         
 2039                    COMP_B:
@@ -87,7 +87,7 @@ as12, an absolute assembler for Motorola MCU's, version 1.2h
 203f 87                 	CLRA
 2040 c4 f0                  ANDB #$F0
 2042 c1 50                  CMPB #$50
-2044 25 03                 	BCS  COMP_C
+2044 25 03                 	BLO  COMP_C
 2046 c3 00 30               ADDD #$30 ; if B is $50
                         
 2049                    COMP_C:
@@ -99,7 +99,7 @@ as12, an absolute assembler for Motorola MCU's, version 1.2h
 2057 f6 10 10               LDAB NUM_BCD
 205a c4 0f                  ANDB #$0F
 205c c1 05                  CMPB #5
-205e 25 03                  BCS  storeNUM_BCD
+205e 25 03                  BLO  storeNUM_BCD
 2060 cb 03                  ADDB #3
 2062 87                     CLRA
                         
