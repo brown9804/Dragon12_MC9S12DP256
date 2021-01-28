@@ -75,7 +75,7 @@ COMP4Bytes:
     LDD NUM_BCD+1
    	ANDB #$0F
    	CMPB #5
-   	BCS COMP_B
+   	BLO COMP_B
 	ADDB #3
 
 COMP_B:
@@ -84,7 +84,7 @@ COMP_B:
 	CLRA
     ANDB #$F0
     CMPB #$50
-   	BCS  COMP_C
+   	BLO COMP_C
     ADDD #$30 ; if B is $50
 
 COMP_C:
@@ -96,7 +96,7 @@ COMP_C:
     LDAB NUM_BCD
     ANDB #$0F
     CMPB #5
-    BCS  storeNUM_BCD
+    BLO storeNUM_BCD
     ADDB #3
     CLRA
 
