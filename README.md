@@ -12,7 +12,7 @@ Need to install the simulator and some driver, inside "dependencies" folder is e
 
 ## Projects:
 
-### 1. EP_AppDev [Assembly]
+### 1. ep_AppDev [Assembly]
 This work analyzes what are embedded processors, 
 ISA Architecture, internal processor design, 
 application development, ISA 9S12 Model, etc.
