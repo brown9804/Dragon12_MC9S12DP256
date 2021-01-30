@@ -6,14 +6,38 @@
 ; Jan, 2021
 
 ;##--------------------------------  EXPLANATION ------------------------------------
-This algorithm includes two tables:
-1. DATA -> where data is stored
-2. CUAD -> here we have just values with a int sqrt
+;This algorithm includes two tables:
+;1. DATA -> where data is stored
+;2. CUAD -> here we have just values with a int sqrt
 
-- CANT is a variable that sets the amount of first data to
-find that they have an integer square root (Stored in CUAD)
-The square root is calculated and the values are placed in ENTERO. 
+;- CANT is a variable that sets the amount of first data to
+;find that they have an integer square root (Stored in CUAD)
+;The square root is calculated and the values are placed in ENTERO. 
 
+;It has several subroutines:
+; LEER_CANT: 
+;This subroutine receives the CANT value from the 
+;keyboard, using the; GETCHAR subroutine. The subroutine 
+;must validate that the entered value is a 
+;number between 1 and 99. 
+; BUSCAR:
+;This subroutine looks for the CANT DATA values that are in CUAD.
+;Every time that finds a valid value, the BUSCAR 
+;subroutine should call the RAIZ subroutine. In addition, 
+;the subroutine will carry a counter of the values
+;found in the variable CONT. The BUSCAR subroutine 
+;passes the value to RAIZ by means of the stack and by 
+;this same means RAIZ returns the result. On the other hand 
+;the subroutine must put the result in the ENTERO array. 
+; RAIZ:
+;This subroutine calculates the square root. 
+;The value to which it must be obtained the square root must 
+;be passed to the subroutine by the stack and the subroutine
+;will return the value calculated by the stack. 
+; Print_RESULT:
+;This subroutine prints the number 
+;of rooted numbers and the
+;array integers 
 
 ;##--------------------------------  DEFINITIONS ------------------------------------
 
