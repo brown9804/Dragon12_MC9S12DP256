@@ -64,16 +64,16 @@
 ; low bit of port A is set to zero to identify the
 ; key pressed, this way there are only 3 possibilities. The value of the
 ; pressed key is returned, to the procedure that called this
-; subroutine, through the variable Key. This subroutine does not receive any
+; subroutine, through the variable Tecla. This subroutine does not receive any
 ; parameter.
 
 ; - FORMAR_ARRAY Subroutine:
 ; This subroutine receives the value of the valid key pressed in
-; the variable IN_key. It also has the value of the constant that defines
+; the variable Tecla_IN. It also has the value of the constant that defines
 ; what is the maximum length of the key sequence stored in
 ; MAX_TCL, this constant can have a value between 1 and 6. The
 ; subroutine places key values in an orderly fashion
-; received at Key_IN in an array named Num_Array. 
+; received at Tecla_IN in an array named Num_Array. 
 ; Uses a variable called Cont_TCL to store the key number in Num_Array. 
 ; This arrangement must be accessed by indexed addressing by accumulating 
 ; B (loading in B the content of Cont_TCL). Every time FORMAR_ARRAY is entered, 
@@ -81,12 +81,12 @@
 ; the new key received in Key_IN is $ 0E (Enter) in which case ARRAY_OK = 1
 ; indicating that the Num_Array was completed and Cont_TCL = 0 is reset, so that
 ; be ready for a new input sequence. If what was received in
-; Key_IN is $ 0B, put $ FF at the current position of Num_Array and
+; Tecla_IN is $ 0B, put $ FF at the current position of Num_Array and
 ; discount Cont_TCL, only if this is not zero, so that in the next
 ; iteration (new entry of a key) this is stored in the
 ; previous position (erase function). The indicated, regarding
 ; reception in FORMAR_ARRAY of an E or B key, applies in
-; any time a key is received on the IN_key, except with the
+; any time a key is received on the Tecla_IN, except with the
 ; first key, because if $ 0B or $ 0E is received as the first key, you must
 ; be ignored. When Cont_TCL reaches the value of
 ; MAX_TCL the only valid keys to process are E and B, any other
