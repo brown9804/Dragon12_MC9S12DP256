@@ -17,7 +17,7 @@
 ; the last key pressed placed in the array. When it comes to the last
 ; algorithm sequence data only accepts the E key or the B key. Any
 ; another pressed key should be ignored. If in a key sequence the
-; The first key that is pressed is the E key or the B key is not considered.
+; first key that is pressed is the E key or the B key is not considered.
 ; "Rollover" is NOT implemented.
 
 ; ABOUT HARDWARE:
