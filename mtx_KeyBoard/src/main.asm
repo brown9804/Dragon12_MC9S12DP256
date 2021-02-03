@@ -29,7 +29,7 @@
 ; - MAIN:
 ; The main program declares and initializes the data structures and
 ; configures RTI and PH0 interrupts. Also calls way
-; recurring to the Keyboard_Task, whenever the ARRAY_OK flag is
+; recurring to the Tarea_Teclado, whenever the ARRAY_OK flag is
 ; zero. This flag is set to 1 when a key sequence is finished
 ; and is cleared by the procedure using the read key sequence.
 ; In this case, for testing purposes, this flag will be cleared by
@@ -57,7 +57,7 @@
 ; - MUX_TECLADO: 
 ; This subroutine is in charge of reading the keyboard itself.
 ; The matrix keyboard is read iteratively by sending one of the 4
-; patterns ($ EF, $ DF, $ BF, $ 7F) to port A. A variable named PATTERN is used
+; patterns ($ EF, $ DF, $ BF, $ 7F) to port A. A variable named PATRON is used
 ; which is loaded with the initial pattern and shifts the
 ; zero position until all patterns are covered. For reading the
 ; keyboard should NOT read the patterns, instead look for which one
@@ -72,7 +72,7 @@
 ; the variable IN_key. It also has the value of the constant that defines
 ; what is the maximum length of the key sequence stored in
 ; MAX_TCL, this constant can have a value between 1 and 6. The
-; subroutine places key values ​​in an orderly fashion
+; subroutine places key values in an orderly fashion
 ; received at Key_IN in an array named Num_Array. 
 ; Uses a variable called Cont_TCL to store the key number in Num_Array. 
 ; This arrangement must be accessed by indexed addressing by accumulating 
