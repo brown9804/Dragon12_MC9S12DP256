@@ -6,7 +6,7 @@
 ; Feb, 2021
 
 ;##--------------------------------  EXPLANATION ------------------------------------
-; This algorithm reads the key values ​​in BCD and creates an array with the
+; This algorithm reads the key values in BCD and creates an array with the
 ; key sequence entered. The key sequence has a length
 ; defined by means of a constant and its value is between 1 and 6.
 ; You can read a key or up to 6 keys can be read. The user can enter a
