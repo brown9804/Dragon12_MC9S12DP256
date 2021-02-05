@@ -23,6 +23,8 @@ program design and development tools and 9S12 ISA model (math operations).
 
 ### 3. sqrt_program [Assembly]
 This folder contains a sqrt calculator to understand 
-modular programming structures, specifically subroutines
+modular programming structures, specifically subroutines.
 
-## 4. mtx_KeyBoard [Assembly]
+### 4. mtx_KeyBoard [Assembly]
+Contains 9S12 Peripherals: Input / Output structures: parallel ports,
+clock and Exceptions system, the timer module. 
