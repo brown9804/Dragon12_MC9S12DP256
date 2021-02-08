@@ -28,3 +28,10 @@ modular programming structures, specifically subroutines.
 ### 4. mtx_KeyBoard [Assembly]
 Contains 9S12 Peripherals: Input / Output structures: parallel ports,
 clock and Exceptions system, the timer module. 
+
+## 5. mux_Screens [Assembly]
+This project works with the Input Capture: pulse accumulator,
+screen management (multiplexed screens, self-contained screens)
+and the Analog Digital Conversion Module: A / D converters operation,
+types of A / D converters, 9S12 A / D converters, ATD records, A / D 
+conversion example, ATD external trigger, and ATD port as digital inputs. 
