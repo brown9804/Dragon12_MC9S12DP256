@@ -29,7 +29,7 @@ modular programming structures, specifically subroutines.
 Contains 9S12 Peripherals: Input / Output structures: parallel ports,
 clock and Exceptions system, the timer module. 
 
-## 5. mux_Screens [Assembly]
+### 5. mux_Screens [Assembly]
 This project works with the Input Capture: pulse accumulator,
 screen management (multiplexed screens, self-contained screens)
 and the Analog Digital Conversion Module: A / D converters operation,
