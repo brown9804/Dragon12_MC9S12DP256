@@ -35,3 +35,8 @@ screen management (multiplexed screens, self-contained screens)
 and the Analog Digital Conversion Module: A / D converters operation,
 types of A / D converters, 9S12 A / D converters, ATD records, A / D 
 conversion example, ATD external trigger, and ATD port as digital inputs. 
+
+### 6. asyn_commun [Assembly]
+This work encompasses the Asynchronous Serial communication application. 
+SCI Interface: concepts of serial communication, the Serial Communication Interface 
+(SCI), configuration of the SCI Interface and operation of the SCI Interface.
