@@ -1,4 +1,4 @@
-# Dragon12 board 
+# Dragon12 Board 
 ## MC9S12DP256 controller
 
 Here you can find design/simulations of different 
