@@ -1,0 +1,1504 @@
+
+as12, an absolute assembler for Motorola MCU's, version 1.2h
+
+                        ;       Autor:
+                        ; Brown Ramírez, Belinda 
+                        ; López, José
+                        ; timna.brown@ucr.ac.cr
+                        ; jose.lopezpicado@ucr.ac.cr
+                        ; Feb, 2021
+                        
+                        ;##--------------------------------  EXPLANATION ------------------------------------
+                        ;A screw production line is considered for which a dispensing 
+                        ;machine for packaging is implemented. This machine counts 
+                        ;the screws that are dispensed for packaging and when 
+                        ;the programmed count of the number of screws in the package 
+                        ;(QTYPQ) is reached, an output (SAL) is activated that dispatches 
+                        ;the package with the number of screws completed and the machine 
+                        ;is ready for a new dispensing sequence. The machine control has 
+                        ;two modes of operation: CONFIG and RUN. There is a selector 
+                        ;who has the name of MODSEL who is in charge of choosing the 
+                        ;mode in which it is being worked. Considering subroutines:
+                        ;       - MODO CONFIG:
+                        ;This is the operating mode where the number of screws that 
+                        ;go per package is configured.
+                        ;       - BCD_BIN: 
+                        ;This subroutine takes the value Num_Array and is converted 
+                        ;to binary and stored in CantPQ.
+                        ;       - MODO RUN:
+                        ;This mode is in charge of executing the action, it considers 
+                        ;TIMER_CUENTA and "CUENTA" until reaching CantPQ. The "CUENTA" 
+                        ;and AcmPQ values are stored in BIN1 and BIN2 to be displayed 
+                        ;on the 7-segment display.
+                        ;       - RTI_ISR:
+                        ; RTI of 1 mS is implemented. The value of
+                        ; TIMER_CUENTA is reduced every time
+                        ; different from zero. Subtraction Cont_Reb
+                        ; as long as it is different from zero.
+                        ;       - PTH_ISR
+                        ;It handles the PTH0 interrupt (CuentaCLR), 
+                        ;PTH1 interrupt (AcmCLR) and 
+                        ;the PTH3 / PH2 interrupt.
+                        ;       - OC4_ISR:
+                        ;It attends to the Output Compare interrupt 
+                        ;of Channel 4. Receiving the value in 7 segments 
+                        ;to be displayed (variables DISP1 to DISP4) and 
+                        ;the variable LEDs and is in charge of displaying 
+                        ;it on the 7-segment screen and the LED port in 
+                        ;a multiplexed manner, according to the multiplexing 
+                        ;technique seen in class.
+                        ;       - CONV_BIN_BCD:
+                        ;It receives two values ​​equal to or less than 99, 
+                        ;in order to assign a value of $B to designate 
+                        ;the screen positions in off
+                        ;       - BIN_BCD:
+                        ;This subroutine is responsible for converting a 
+                        ;binary number into BCD using the XS3 algorithm
+                        ;       - BCD_7SEG:
+                        ;This subroutine is in charge of converting the BCD 
+                        ;values ​​to 7 segments by means of a table and 
+                        ;the indexed addressing
+                        ;       - Cargar_LCD:
+                        ;Every time the operating mode is changed,
+                        ;by means of the CambMod flag. It is activated every 
+                        ;time the operating mode is changed in order to enable 
+                        ;screen refresh and optimize this feature.
+                        ;       - Delay: 
+                        ;It takes care of waiting the necessary delay.
+                        ;       - Send_Command & Send_Data: 
+                        ;They send both the commands and the data to the 
+                        ;LCD through accumulator A.
+                        
+                        ;##--------------------------------  INCLUDE ------------------------------------
+                        #include  registers.inc
+                        ; Memory maps and register equates
+                        ; Choose one of DBUG12MAP (normal operation under DBUG12)
+                        ;               EEPROMMAP  (DBUG12 in EEPROM mode)
+                        ;               FLASHMAP   (Program loaded into Flash ROM)
+0000                    DBUG12MAP equ 0        ; Memory mode is DBUG12MAP
+                        ; EEPROMMAP equ 0         ; Memory mode is EEPROMMAP
+                        #ifdef DBUG12MAP
+0000                    REGBASE        equ        $0        ; register base
+1000                    DATASTART equ        $1000        ; Start of data memory
+2000                    DATAEND  equ        $2000        ; Stack pointer initial value (end of data RAM area)
+2000                    PRSTART equ        $2000        ; Start of program memory (might be ROM)
+3bff                    PREND        equ        $3BFF        ; End of program memory
+                        
+                        ; Functions in D-Bug12
+ee84                    Getchar        equ        $EE84        ; Implemented in emulator
+ee86                    Putchar equ        $EE86   ; Implemented in emulator
+ee88                    Printf  equ     $EE88
+ee8a                    GetCmdLine equ  $EE8A   ; FAR call
+ee8e                    Sscanhex equ        $EE8E   ; FAR call
+ee92                    Isxdigit equ    $EE92
+ee94                    Toupper equ     $EE94
+ee96                    Isalpha equ     $EE96
+ee98                    Strlen  equ     $EE98
+ee9a                    Strcpy  equ     $EE9A
+ee9c                    Out2hex equ     $EE9C   ; FAR call
+eea0                    Out4hex equ     $EEA0   ; FAR call
+eea4                    SetUserVector equ $EEA4 ; No longer used
+eea6                    WriteEEByte equ $EEA6   ; FAR call
+eeaa                    EraseEE equ     $EEAA   ; FAR call
+eeae                    ReadMem equ     $EEAE   ; FAR call
+eeb2                    WriteMem equ    $EEB2   ; FAR call
+                        
+3e00                    VECTORTABLE equ $3E00        ; Vectors go here SHOULD ALSO INITIALIZE AT RUNTIME
+0000                    STATICVECTORS equ 0        ; Define vectors statically (in "ROM")
+0000                    INITIALIZEVECTORS equ 0        ; Initialize vectors at runtime
+                        #endif
+                        
+                        #ifdef EEPROMMAP
+                        REGBASE        equ        $0        ; register base MAY BE MOVED TO MAKE FULL EEPROM ACCESSABLE
+                        DATASTART equ        $1000        ; Start of data memory
+                        DATAEND  equ        $3E00        ; Stack pointer initial value (end of data RAM area)
+                        PRSTART equ        $400        ; Start of program memory
+                        PREND        equ        $FFF        ; End of program memory
+                        
+                        VECTORTABLE equ $3E00        ; Vectors go here -- MUST BE INITIALIZED AT RUNTIME
+                        INITIALIZEVECTORS equ 0        ; Initialize vectors at runtime
+                        #endif
+                        
+                        #ifdef FLASHMAP
+                        REGBASE        equ        $0        ; register base MAY BE MOVED TO MAKE FULL EEPROM ACCESSABLE
+                        DATASTART equ        $1000        ; Start of data memory
+                        DATAEND  equ        $4000        ; Stack pointer initial value (end of data RAM area)
+                        PRSTART equ        $8000        ; Start of program memory
+                        ; Note -- there are problems using the current free assemblers with paged memory
+                        ; Best bet is to use logical addresses $8000 up only, set page register to 3E,
+                        ; Change S1 records for $8000-BFFF to S2 records for page 3E and S1 records for $C000-$EFFF to
+                        ; page 3F. Program startup vector goes in EFFE, and needs to be iin page 3F so PPAGE can be changed. 
+                        PREND        equ        $EF7F        ; End of program memory
+                        
+                        VECTORTABLE equ $EF80        ; Vectors go here -- MUST BE INITIALIZED STATICALLY
+                        STATICVECTORS equ 0        ; Define vectors statically (in "ROM")
+                        #endif
+                        
+                        
+1000                    RAMSTART equ        DATASTART ; For compatibility
+2000                    RAMEND equ        DATAEND   
+                        
+3e00                    UserRsrv0x80 equ (0*2)+VECTORTABLE
+3e02                    UserRsrv0x82 equ (1*2)+VECTORTABLE
+3e04                    UserRsrv0x84 equ (2*2)+VECTORTABLE
+3e06                    UserRsrv0x86 equ (3*2)+VECTORTABLE
+3e08                    UserRsrv0x88 equ (4*2)+VECTORTABLE
+3e0a                    UserRsrv0x8a equ (5*2)+VECTORTABLE
+3e0c                    UserPWMShDn equ (6*2)+VECTORTABLE
+3e0e                    UserPortP equ (7*2)+VECTORTABLE
+3e10                    UserMSCAN4Tx equ (8*2)+VECTORTABLE
+3e12                    UserMSCAN4Rx equ (9*2)+VECTORTABLE
+3e14                    UserMSCAN4Errs equ (10*2)+VECTORTABLE
+3e16                    UserMSCAN4Wake equ (11*2)+VECTORTABLE
+3e18                    UserMSCAN3Tx equ (12*2)+VECTORTABLE
+3e1a                    UserMSCAN3Rx equ (13*2)+VECTORTABLE
+3e1c                    UserMSCAN3Errs equ (14*2)+VECTORTABLE
+3e1e                    UserMSCAN3Wake equ (15*2)+VECTORTABLE
+3e20                    UserMSCAN2Tx equ (16*2)+VECTORTABLE
+3e22                    UserMSCAN2Rx equ (17*2)+VECTORTABLE
+3e24                    UserMSCAN2Errs equ (18*2)+VECTORTABLE
+3e26                    UserMSCAN2Wake equ (19*2)+VECTORTABLE
+3e28                    UserMSCAN1Tx equ (20*2)+VECTORTABLE
+3e2a                    UserMSCAN1Rx equ (21*2)+VECTORTABLE
+3e2c                    UserMSCAN1Errs equ (22*2)+VECTORTABLE
+3e2e                    UserMSCAN1Wake equ (23*2)+VECTORTABLE
+3e30                    UserMSCAN0Tx equ (24*2)+VECTORTABLE
+3e32                    UserMSCAN0Rx equ (25*2)+VECTORTABLE
+3e34                    UserMSCAN0Errs equ (26*2)+VECTORTABLE
+3e36                    UserMSCAN0Wake equ (27*2)+VECTORTABLE
+3e38                    UserFlash equ (28*2)+VECTORTABLE
+3e3a                    UserEEPROM equ (29*2)+VECTORTABLE
+3e3c                    UserSPI2 equ (30*2)+VECTORTABLE
+3e3e                    UserSPI1 equ (31*2)+VECTORTABLE
+3e40                    UserIIC equ (32*2)+VECTORTABLE
+3e42                    UserDLC equ (33*2)+VECTORTABLE
+3e44                    UserSCME equ (34*2)+VECTORTABLE
+3e46                    UserCRG equ (35*2)+VECTORTABLE
+3e48                    UserPAccBOv equ (36*2)+VECTORTABLE
+3e4a                    UserModDwnCtr equ (37*2)+VECTORTABLE
+3e4c                    UserPortH equ (38*2)+VECTORTABLE
+3e4e                    UserPortJ equ (39*2)+VECTORTABLE
+3e50                    UserAtoD1 equ (40*2)+VECTORTABLE
+3e52                    UserAtoD0 equ (41*2)+VECTORTABLE
+3e54                    UserSCI1 equ (42*2)+VECTORTABLE
+3e56                    UserSCI0 equ (43*2)+VECTORTABLE
+3e58                    UserSPI0 equ (44*2)+VECTORTABLE
+3e5a                    UserPAccEdge equ (45*2)+VECTORTABLE
+3e5c                    UserPAccOvf equ (46*2)+VECTORTABLE
+3e5e                    UserTimerOvf equ (47*2)+VECTORTABLE
+3e60                    UserTimerCh7 equ (48*2)+VECTORTABLE
+3e62                    UserTimerCh6 equ (49*2)+VECTORTABLE
+3e64                    UserTimerCh5 equ (50*2)+VECTORTABLE
+3e66                    UserTimerCh4 equ (51*2)+VECTORTABLE
+3e68                    UserTimerCh3 equ (52*2)+VECTORTABLE
+3e6a                    UserTimerCh2 equ (53*2)+VECTORTABLE
+3e6c                    UserTimerCh1 equ (54*2)+VECTORTABLE
+3e6e                    UserTimerCh0 equ (55*2)+VECTORTABLE
+3e70                    UserRTI equ (56*2)+VECTORTABLE
+3e72                    UserIRQ equ (57*2)+VECTORTABLE
+3e74                    UserXIRQ equ (58*2)+VECTORTABLE
+3e76                    UserSWI equ (59*2)+VECTORTABLE
+3e78                    UserTrap equ (60*2)+VECTORTABLE
+                        
+                        
+                        *
+                        *
+                        *  HC12 i/o register locations (9s12dp256)
+                        *
+                        *
+0000                    PORTA:          equ REGBASE+0   ;port a = address lines a8 - a15
+0001                    PORTB:          equ REGBASE+1   ;port b = address lines a0 - a7
+0002                    DDRA:           equ REGBASE+2   ;port a direction register
+0003                    DDRB:           equ REGBASE+3   ;port b direction register
+                        
+0008                    PORTE:          equ REGBASE+8   ;port e = mode,irq and control signals
+0009                    DDRE:           equ REGBASE+9   ;port e direction register
+000a                    PEAR:           equ REGBASE+$a  ;port e assignments
+000b                    MODE:           equ REGBASE+$b  ;mode register
+000c                    PUCR:           equ REGBASE+$c  ;port pull-up control register
+000d                    RDRIV:          equ REGBASE+$d  ;port reduced drive control register
+000e                    EBICTL:                equ REGBASE+$e  ;e stretch control
+                        
+0010                    INITRM:         equ REGBASE+$10 ;ram location register
+0011                    INITRG:         equ REGBASE+$11 ;register location register
+0012                    INITEE:         equ REGBASE+$12 ;eeprom location register
+0013                    MISC:           equ REGBASE+$13 ;miscellaneous mapping control
+0014                    MTST0:          equ REGBASE+$14 ; reserved
+0015                    ITCR:           equ REGBASE+$15 ;interrupt test control register
+0016                    ITEST:          equ REGBASE+$16 ;interrupt test register
+0017                    MTST1:          equ REGBASE+$17 ; reserved
+                        
+001a                    PARTIDH:        equ REGBASE+$1a ;part id high
+001b                    PARTIDL:        equ REGBASE+$1b ;part id low
+001c                    MEMSIZ0:        equ REGBASE+$1c ;memory size
+001d                    MEMSIZ1:        equ REGBASE+$1d ;memory size
+001e                    IRQCR:          equ REGBASE+$1e ;interrupt control register
+001e                    INTCR:          equ REGBASE+$1e ;interrupt control register (old name)
+001f                    HPRIO:          equ REGBASE+$1f ;high priority reg
+                        
+0028                    BKPCT0:         equ REGBASE+$28 ;break control register
+0029                    BKPCT1:         equ REGBASE+$29 ;break control register
+002a                    BKP0X:          equ REGBASE+$2a ; break 0 index register
+002b                    BKP0H:          equ REGBASE+$2b ; break 0 pointer high
+002c                    BRP0L:          equ REGBASE+$2c ; break 0 pointer low
+002d                    BKP1X:          equ REGBASE+$2d ; break 1 index register
+002e                    BKP1H:          equ REGBASE+$2e ; break 1 pointer high
+002f                    BRP1L:          equ REGBASE+$2f ; break 1 pointer low
+0030                    PPAGE:                equ REGBASE+$30 ;program page register
+                        
+0032                    PORTK:                equ REGBASE+$32 ;port k data
+0033                    DDRK:                equ REGBASE+$33 ;port k direction
+                        
+0034                    SYNR:           equ REGBASE+$34 ; synthesizer / multiplier register
+0035                    REFDV:          equ REGBASE+$35 ; reference divider register
+0036                    CTFLG:          equ REGBASE+$36 ; reserved
+0037                    CRGFLG:         equ REGBASE+$37 ; pll flags register
+0038                    CRGINT:         equ REGBASE+$38 ; pll interrupt register
+0039                    CLKSEL:         equ REGBASE+$39 ; clock select register
+003a                    PLLCTL:         equ REGBASE+$3a ; pll control register
+003b                    RTICTL:         equ REGBASE+$3b ;real time interrupt control
+003c                    COPCTL:         equ REGBASE+$3c ;watchdog control
+003d                    FORBYP:         equ REGBASE+$3d ;
+003e                    CTCTL:          equ REGBASE+$3e ;
+003f                    ARMCOP:         equ REGBASE+$3f ;cop reset register
+                        
+0040                    TIOS:           equ REGBASE+$40 ;timer input/output select
+0041                    CFORC:          equ REGBASE+$41 ;timer compare force
+0042                    OC7M:           equ REGBASE+$42 ;timer output compare 7 mask
+0043                    OC7D:           equ REGBASE+$43 ;timer output compare 7 data
+0044                    TCNT:           equ REGBASE+$44 ;timer counter register hi
+                        *TCNT:          equ REGBASE+$45 ;timer counter register lo
+0046                    TSCR:           equ REGBASE+$46 ;timer system control register (Old Name)
+0046                    TSCR1:          equ REGBASE+$46 ;timer system control register
+0047                    TTOV:           equ REGBASE+$47 ;reserved
+0048                    TCTL1:          equ REGBASE+$48 ;timer control register 1
+0049                    TCTL2:          equ REGBASE+$49 ;timer control register 2
+004a                    TCTL3:          equ REGBASE+$4a ;timer control register 3
+004b                    TCTL4:          equ REGBASE+$4b ;timer control register 4
+004c                    TMSK1:          equ REGBASE+$4c ;timer interrupt mask 1 (Old Name)
+004c                    TIE:            equ REGBASE+$4c ;timer interrupt mask 1
+004d                    TMSK2:          equ REGBASE+$4d ;timer interrupt mask 2 (Old Name)
+004d                    TSCR2:          equ REGBASE+$4d ;timer interrupt mask 2
+004e                    TFLG1:          equ REGBASE+$4e ;timer flags 1
+004f                    TFLG2:          equ REGBASE+$4f ;timer flags 2
+0050                    TC0:            equ REGBASE+$50 ;timer capture/compare register 0
+0052                    TC1:            equ REGBASE+$52 ;timer capture/compare register 1
+0054                    TC2:            equ REGBASE+$54 ;timer capture/compare register 2
+0056                    TC3:            equ REGBASE+$56 ;timer capture/compare register 3
+0058                    TC4:            equ REGBASE+$58 ;timer capture/compare register 4
+005a                    TC5:            equ REGBASE+$5a ;timer capture/compare register 5
+005c                    TC6:            equ REGBASE+$5c ;timer capture/compare register 6
+005e                    TC7:            equ REGBASE+$5e ;timer capture/compare register 7
+0060                    PACTL:          equ REGBASE+$60 ;pulse accumulator controls
+0061                    PAFLG:          equ REGBASE+$61 ;pulse accumulator flags
+0062                    PACN3:          equ REGBASE+$62 ;pulse accumulator counter 3
+0063                    PACN2:          equ REGBASE+$63 ;pulse accumulator counter 2
+0064                    PACN1:          equ REGBASE+$64 ;pulse accumulator counter 1
+0065                    PACN0:          equ REGBASE+$65 ;pulse accumulator counter 0
+0066                    MCCTL:          equ REGBASE+$66 ;modulus down conunter control
+0067                    MCFLG:          equ REGBASE+$67 ;down counter flags
+0068                    ICPAR:          equ REGBASE+$68 ;input pulse accumulator control
+0069                    DLYCT:          equ REGBASE+$69 ;delay count to down counter
+006a                    ICOVW:          equ REGBASE+$6a ;input control overwrite register
+006b                    ICSYS:          equ REGBASE+$6b ;input control system control
+                        
+006d                    TIMTST:         equ REGBASE+$6d ;timer test register
+                        
+0070                    PBCTL:          equ REGBASE+$70 ; pulse accumulator b control
+0071                    PBFLG:          equ REGBASE+$71 ; pulse accumulator b flags
+0072                    PA3H:           equ REGBASE+$72 ; pulse accumulator holding register 3
+0073                    PA2H:           equ REGBASE+$73 ; pulse accumulator holding register 2
+0074                    PA1H:           equ REGBASE+$74 ; pulse accumulator holding register 1
+0075                    PA0H:           equ REGBASE+$75 ; pulse accumulator holding register 0
+0076                    MCCNT:          equ REGBASE+$76 ; modulus down counter register
+                        *MCCNTL:        equ REGBASE+$77 ; low byte
+0078                    TCOH:           equ REGBASE+$78 ; capture 0 holding register
+007a                    TC1H:           equ REGBASE+$7a ; capture 1 holding register
+007c                    TC2H:           equ REGBASE+$7c ; capture 2 holding register
+007e                    TC3H:           equ REGBASE+$7e ; capture 3 holding register
+                        
+0080                    ATD0CTL0:       equ REGBASE+$80 ;adc control 0 (reserved)
+0081                    ATD0CTL1:       equ REGBASE+$81 ;adc control 1 (reserved)
+0082                    ATD0CTL2:       equ REGBASE+$82 ;adc control 2
+0083                    ATD0CTL3:       equ REGBASE+$83 ;adc control 3
+0084                    ATD0CTL4:       equ REGBASE+$84 ;adc control 4
+0085                    ATD0CTL5:       equ REGBASE+$85 ;adc control 5
+0086                    ATD0STAT:       equ REGBASE+$86 ;adc status register hi
+0086                    ATD0STAT0:      equ REGBASE+$86 ;adc status register hi
+008b                    ATD0STAT1:      equ REGBASE+$8b ;adc status register lo
+0088                    ATD0TEST:       equ REGBASE+$88 ;adc test (reserved)
+                        *atd0test       equ REGBASE+$89 ;
+                        
+008d                    ATD0DIEN:        equ REGBASE+$8d ;
+                        
+008f                    PORTAD:         equ REGBASE+$8f ;port adc = input only
+0090                    ADR00H:         equ REGBASE+$90 ;adc result 0 register
+0092                    ADR01H:         equ REGBASE+$92 ;adc result 1 register
+0094                    ADR02H:         equ REGBASE+$94 ;adc result 2 register
+0096                    ADR03H:         equ REGBASE+$96 ;adc result 3 register
+0098                    ADR04H:         equ REGBASE+$98 ;adc result 4 register
+009a                    ADR05H:         equ REGBASE+$9a ;adc result 5 register
+009c                    ADR06H:         equ REGBASE+$9c ;adc result 6 register
+009e                    ADR07H:         equ REGBASE+$9e ;adc result 7 register
+                        
+00a0                    PWME:                equ REGBASE+$a0 ;pwm enable
+00a1                    PWMPOL:         equ REGBASE+$a1 ;pwm polarity
+00a2                    PWMCLK:         equ REGBASE+$a2 ;pwm clock select register
+00a3                    PWMPRCLK:       equ REGBASE+$a3 ;pwm prescale clock select register
+00a4                    PWMCAE:         equ REGBASE+$a4 ;pwm center align select register
+00a5                    PWMCTL:         equ REGBASE+$a5 ;pwm control register
+00a6                    PWMTST:         equ REGBASE+$a6 ;reserved
+00a7                    PWMPRSC:        equ REGBASE+$a7 ;reserved
+00a8                    PWMSCLA:        equ REGBASE+$a8 ;pwm scale a
+00a9                    PWMSCLB:        equ REGBASE+$a9 ;pwm scale b
+00aa                    PWMSCNTA:       equ REGBASE+$aa ;reserved
+00ab                    PWMSCNTB:       equ REGBASE+$ab ;reserved
+00ac                    PWMCNT0:        equ REGBASE+$ac ;pwm channel 0 counter
+00ad                    PWMCNT1:        equ REGBASE+$ad ;pwm channel 1 counter
+00ae                    PWMCNT2:        equ REGBASE+$ae ;pwm channel 2 counter
+00af                    PWMCNT3:        equ REGBASE+$af ;pwm channel 3 counter
+00b0                    PWMCNT4:        equ REGBASE+$b0 ;pwm channel 4 counter
+00b1                    PWMCNT5:        equ REGBASE+$b1 ;pwm channel 5 counter
+00b2                    PWMCNT6:        equ REGBASE+$b2 ;pwm channel 6 counter
+00b3                    PWMCNT7:        equ REGBASE+$b3 ;pwm channel 7 counter
+00b4                    PWMPER0:        equ REGBASE+$b4 ;pwm channel 0 period
+00b5                    PWMPER1:        equ REGBASE+$b5 ;pwm channel 1 period
+00b6                    PWMPER2:        equ REGBASE+$b6 ;pwm channel 2 period
+00b7                    PWMPER3:        equ REGBASE+$b7 ;pwm channel 3 period
+00b8                    PWMPER4:        equ REGBASE+$b8 ;pwm channel 4 period
+00b9                    PWMPER5:        equ REGBASE+$b9 ;pwm channel 5 period
+00ba                    PWMPER6:        equ REGBASE+$ba ;pwm channel 6 period
+00bb                    PWMPER7:        equ REGBASE+$bb ;pwm channel 7 period
+00bc                    PWMDTY0:        equ REGBASE+$bc ;pwm channel 0 duty cycle
+00bd                    PWMDTY1:        equ REGBASE+$bd ;pwm channel 1 duty cycle
+00be                    PWMDTY2:        equ REGBASE+$be ;pwm channel 2 duty cycle
+00bf                    PWMDTY3:        equ REGBASE+$bf ;pwm channel 3 duty cycle
+00c0                    PWMDTY4:        equ REGBASE+$c0 ;pwm channel 4 duty cycle
+00c1                    PWMDTY5:        equ REGBASE+$c1 ;pwm channel 5 duty cycle
+00c2                    PWMDTY6:        equ REGBASE+$c2 ;pwm channel 6 duty cycle
+00c3                    PWMDTY7:        equ REGBASE+$c3 ;pwm channel 7 duty cycle
+00c4                    PWMSDN:         equ REGBASE+$c4 ;pwm shutdown register
+                        
+00c8                    SC0BDH:         equ REGBASE+$c8 ;sci 0 baud reg hi byte
+00c9                    SC0BDL:         equ REGBASE+$c9 ;sci 0 baud reg lo byte
+00ca                    SC0CR1:         equ REGBASE+$ca ;sci 0 control1 reg
+00cb                    SC0CR2:         equ REGBASE+$cb ;sci 0 control2 reg
+00cc                    SC0SR1:         equ REGBASE+$cc ;sci 0 status reg 1
+00cd                    SC0SR2:         equ REGBASE+$cd ;sci 0 status reg 2
+00ce                    SC0DRH:         equ REGBASE+$ce ;sci 0 data reg hi
+00cf                    SC0DRL:         equ REGBASE+$cf ;sci 0 data reg lo
+                        
+00d0                    SC1BDH:         equ REGBASE+$d0 ;sci 1 baud reg hi byte
+00d1                    SC1BDL:         equ REGBASE+$d1 ;sci 1 baud reg lo byte
+00d2                    SC1CR1:         equ REGBASE+$d2 ;sci 1 control1 reg
+00d3                    SC1CR2:         equ REGBASE+$d3 ;sci 1 control2 reg
+00d4                    SC1SR1:         equ REGBASE+$d4 ;sci 1 status reg 1
+00d5                    SC1SR2:         equ REGBASE+$d5 ;sci 1 status reg 2
+00d6                    SC1DRH:         equ REGBASE+$d6 ;sci 1 data reg hi
+00d7                    SC1DRL:         equ REGBASE+$d7 ;sci 1 data reg lo
+                        
+00d8                    SPI0CR1:        equ REGBASE+$d8 ;spi 0 control1 reg
+00d9                    SPI0CR2:        equ REGBASE+$d9 ;spi 0 control2 reg
+00da                    SPI0BR:         equ REGBASE+$da ;spi 0 baud reg
+00db                    SPI0SR:         equ REGBASE+$db ;spi 0 status reg hi
+00dd                    SP0DR:          equ REGBASE+$dd ;spi 0 data reg  FOR COMPATIBILITY
+00dd                    SPI0DR:          equ REGBASE+$dd ;spi 0 data reg
+                        
+00e0                    IBAD:                equ REGBASE+$e0 ;i2c bus address register
+00e1                    IBFD:                equ REGBASE+$e1 ;i2c bus frequency divider
+00e2                    IBCR:                equ REGBASE+$e2 ;i2c bus control register
+00e3                    IBSR:                equ REGBASE+$e3 ;i2c bus status register
+00e4                    IBDR:                equ REGBASE+$e4 ;i2c bus message data register
+                        
+00e8                    DLCBCR1:        equ REGBASE+$e8 ;bdlc control regsiter 1
+00e9                    DLCBSVR:        equ REGBASE+$e9 ;bdlc state vector register
+00ea                    DLCBCR2:        equ REGBASE+$ea ;bdlc control register 2
+00eb                    DLCBDR:                equ REGBASE+$eb ;bdlc data register
+00ec                    DLCBARD:        equ REGBASE+$ec ;bdlc analog delay register
+00ed                    DLCBRSR:        equ REGBASE+$ed ;bdlc rate select register
+00ee                    DLCSCR:                equ REGBASE+$ee ;bdlc control register
+00ef                    DLCBSTAT:        equ REGBASE+$ef ;bdlc status register
+                        
+00f0                    SPI1CR1:        equ REGBASE+$f0 ;spi 1 control1 reg
+00f1                    SPI1CR2:        equ REGBASE+$f1 ;spi 1 control2 reg
+00f2                    SPI1BR:         equ REGBASE+$f2 ;spi 1 baud reg
+00f3                    SPI1SR:         equ REGBASE+$f3 ;spi 1 status reg hi
+00f5                    SPI1DR:          equ REGBASE+$f5 ;spi 1 data reg
+00f5                    SP1DR:          equ REGBASE+$f5 ;spi 1 data reg   FOR COMPATIBILITY
+                        
+00f8                    SPI2CR1:        equ REGBASE+$f8 ;spi 2 control1 reg
+00f9                    SPI2CR2:        equ REGBASE+$f9 ;spi 2 control2 reg
+00fa                    SPI2BR:         equ REGBASE+$fa ;spi 2 baud reg
+00fb                    SPI2SR:         equ REGBASE+$fb ;spi 2 status reg hi
+00fd                    SPI2DR:         equ REGBASE+$fd ;spi 2 data reg
+00fd                    SP2DR:          equ REGBASE+$fd ;spi 2 data reg   FOR COMPATIBILITY
+                        
+0100                    FCLKDIV:        equ REGBASE+$100 ;flash clock divider
+0101                    FSEC:                equ REGBASE+$101 ;flash security register
+                        
+0103                    FCNFG:                equ REGBASE+$103 ;flash configuration register
+0104                    FPROT:                equ REGBASE+$104 ;flash protection register
+0105                    FSTAT:                equ REGBASE+$105 ;flash status register
+0106                    FCMD:                equ REGBASE+$106 ;flash command register
+                        
+0110                    ECLKDIV:        equ REGBASE+$110 ;eeprom clock divider
+                        
+0113                    ECNFG:                equ REGBASE+$113 ;eeprom configuration register
+0114                    EPROT:                equ REGBASE+$114 ;eeprom protection register
+0115                    ESTAT:                equ REGBASE+$115 ;eeprom status register
+0116                    ECMD:                equ REGBASE+$116 ;eeprom command register
+                        
+0120                    ATD1CTL0:       equ REGBASE+$120 ;adc1 control 0 (reserved)
+0121                    ATD1CTL1:       equ REGBASE+$121 ;adc1 control 1 (reserved)
+0122                    ATD1CTL2:       equ REGBASE+$122 ;adc1 control 2
+0123                    ATD1CTL3:       equ REGBASE+$123 ;adc1 control 3
+0124                    ATD1CTL4:       equ REGBASE+$124 ;adc1 control 4
+0125                    ATD1CTL5:       equ REGBASE+$125 ;adc1 control 5
+0126                    ATD1STAT0:      equ REGBASE+$126 ;adc1 status register hi
+012b                    ATD1STAT1:      equ REGBASE+$12b ;adc1 status register lo
+0128                    ATD1TEST:       equ REGBASE+$128 ;adc1 test (reserved)
+                        *atd1test       equ REGBASE+$129 ;
+                        
+012d                    ATDDIEN:        equ REGBASE+$12d ;adc1 input enable register
+                        
+012f                    PORTAD1:        equ REGBASE+$12f ;port adc1 = input only
+0130                    ADR10H:         equ REGBASE+$130 ;adc1 result 0 register
+0132                    ADR11H:         equ REGBASE+$132 ;adc1 result 1 register
+0134                    ADR12H:         equ REGBASE+$134 ;adc1 result 2 register
+0136                    ADR13H:         equ REGBASE+$136 ;adc1 result 3 register
+0138                    ADR14H:         equ REGBASE+$138 ;adc1 result 4 register
+013a                    ADR15H:         equ REGBASE+$13a ;adc1 result 5 register
+013c                    ADR16H:         equ REGBASE+$13c ;adc1 result 6 register
+013e                    ADR17H:         equ REGBASE+$13e ;adc1 result 7 register
+                        
+0140                    CAN0CTL0:        equ REGBASE+$140 ;can0 control register 0
+0141                    CAN0CTL1:        equ REGBASE+$141 ;can0 control register 1
+0142                    CAN0BTR0:        equ REGBASE+$142 ;can0 bus timing register 0
+0143                    CAN0BTR1:        equ REGBASE+$143 ;can0 bus timing register 1
+0144                    CAN0RFLG:        equ REGBASE+$144 ;can0 receiver flags
+0145                    CAN0RIER:        equ REGBASE+$145 ;can0 receiver interrupt enables
+0146                    CAN0TFLG:        equ REGBASE+$146 ;can0 transmit flags
+0147                    CAN0TIER:        equ REGBASE+$147 ;can0 transmit interrupt enables
+0148                    CAN0TARQ:        equ REGBASE+$148 ;can0 transmit message abort control
+0149                    CAN0TAAK:        equ REGBASE+$149 ;can0 transmit message abort status
+014a                    CAN0TBEL:        equ REGBASE+$14a ;can0 transmit buffer select
+014b                    CAN0IDAC:        equ REGBASE+$14b ;can0 identfier acceptance control
+                        
+014e                    CAN0RERR:        equ REGBASE+$14e ;can0 receive error counter
+014f                    CAN0TERR:        equ REGBASE+$14f ;can0 transmit error counter
+0150                    CAN0IDA0:        equ REGBASE+$150 ;can0 identifier acceptance register 0
+0151                    CAN0IDA1:        equ REGBASE+$151 ;can0 identifier acceptance register 1
+0152                    CAN0IDA2:        equ REGBASE+$152 ;can0 identifier acceptance register 2
+0153                    CAN0IDA3:        equ REGBASE+$153 ;can0 identifier acceptance register 3
+0154                    CAN0IDM0:        equ REGBASE+$154 ;can0 identifier mask register 0
+0155                    CAN0IDM1:        equ REGBASE+$155 ;can0 identifier mask register 1
+0156                    CAN0IDM2:        equ REGBASE+$156 ;can0 identifier mask register 2
+0157                    CAN0IDM3:        equ REGBASE+$157 ;can0 identifier mask register 3
+0158                    CAN0IDA4:        equ REGBASE+$158 ;can0 identifier acceptance register 4
+0159                    CAN0IDA5:        equ REGBASE+$159 ;can0 identifier acceptance register 5
+015a                    CAN0IDA6:        equ REGBASE+$15a ;can0 identifier acceptance register 6
+015b                    CAN0IDA7:        equ REGBASE+$15b ;can0 identifier acceptance register 7
+015c                    CAN0IDM4:        equ REGBASE+$15c ;can0 identifier mask register 4
+015d                    CAN0IDM5:        equ REGBASE+$15d ;can0 identifier mask register 5
+015e                    CAN0IDM6:        equ REGBASE+$15e ;can0 identifier mask register 6
+015f                    CAN0IDM7:        equ REGBASE+$15f ;can0 identifier mask register 7
+0160                    CAN0RXFG:        equ REGBASE+$160 ;can0 rx foreground buffer thru +$16f
+0170                    CAN0TXFG:        equ REGBASE+$170 ;can0 tx foreground buffer thru +$17f
+                        
+0180                    CAN1CTL0:        equ REGBASE+$180 ;can1 control register 0
+0181                    CAN1CTL1:        equ REGBASE+$181 ;can1 control register 1
+0182                    CAN1BTR0:        equ REGBASE+$182 ;can1 bus timing register 0
+0183                    CAN1BTR1:        equ REGBASE+$183 ;can1 bus timing register 1
+0184                    CAN1RFLG:        equ REGBASE+$184 ;can1 receiver flags
+0185                    CAN1RIER:        equ REGBASE+$185 ;can1 receiver interrupt enables
+0186                    CAN1TFLG:        equ REGBASE+$186 ;can1 transmit flags
+0187                    CAN1TIER:        equ REGBASE+$187 ;can1 transmit interrupt enables
+0188                    CAN1TARQ:        equ REGBASE+$188 ;can1 transmit message abort control
+0189                    CAN1TAAK:        equ REGBASE+$189 ;can1 transmit message abort status
+018a                    CAN1TBEL:        equ REGBASE+$18a ;can1 transmit buffer select
+018b                    CAN1IDAC:        equ REGBASE+$18b ;can1 identfier acceptance control
+                        
+018e                    CAN1RERR:        equ REGBASE+$18e ;can1 receive error counter
+018f                    CAN1TERR:        equ REGBASE+$18f ;can1 transmit error counter
+0190                    CAN1IDA0:        equ REGBASE+$190 ;can1 identifier acceptance register 0
+0191                    CAN1IDA1:        equ REGBASE+$191 ;can1 identifier acceptance register 1
+0192                    CAN1IDA2:        equ REGBASE+$192 ;can1 identifier acceptance register 2
+0193                    CAN1IDA3:        equ REGBASE+$193 ;can1 identifier acceptance register 3
+0194                    CAN1IDM0:        equ REGBASE+$194 ;can1 identifier mask register 0
+0195                    CAN1IDM1:        equ REGBASE+$195 ;can1 identifier mask register 1
+0196                    CAN1IDM2:        equ REGBASE+$196 ;can1 identifier mask register 2
+0197                    CAN1IDM3:        equ REGBASE+$197 ;can1 identifier mask register 3
+0198                    CAN1IDA4:        equ REGBASE+$198 ;can1 identifier acceptance register 4
+0199                    CAN1IDA5:        equ REGBASE+$199 ;can1 identifier acceptance register 5
+019a                    CAN1IDA6:        equ REGBASE+$19a ;can1 identifier acceptance register 6
+019b                    CAN1IDA7:        equ REGBASE+$19b ;can1 identifier acceptance register 7
+019c                    CAN1IDM4:        equ REGBASE+$19c ;can1 identifier mask register 4
+019d                    CAN1IDM5:        equ REGBASE+$19d ;can1 identifier mask register 5
+019e                    CAN1IDM6:        equ REGBASE+$19e ;can1 identifier mask register 6
+019f                    CAN1IDM7:        equ REGBASE+$19f ;can1 identifier mask register 7
+01a0                    CAN1RXFG:        equ REGBASE+$1a0 ;can1 rx foreground buffer thru +$1af
+01b0                    CAN1TXFG:        equ REGBASE+$1b0 ;can1 tx foreground buffer thru +$1bf
+                        
+01c0                    CAN2CTL0:        equ REGBASE+$1c0 ;can2 control register 0
+01c1                    CAN2CTL1:        equ REGBASE+$1c1 ;can2 control register 1
+01c2                    CAN2BTR0:        equ REGBASE+$1c2 ;can2 bus timing register 0
+01c3                    CAN2BTR1:        equ REGBASE+$1c3 ;can2 bus timing register 1
+01c4                    CAN2RFLG:        equ REGBASE+$1c4 ;can2 receiver flags
+01c5                    CAN2RIER:        equ REGBASE+$1c5 ;can2 receiver interrupt enables
+01c6                    CAN2TFLG:        equ REGBASE+$1c6 ;can2 transmit flags
+01c7                    CAN2TIER:        equ REGBASE+$1c7 ;can2 transmit interrupt enables
+01c8                    CAN2TARQ:        equ REGBASE+$1c8 ;can2 transmit message abort control
+01c9                    CAN2TAAK:        equ REGBASE+$1c9 ;can2 transmit message abort status
+01ca                    CAN2TBEL:        equ REGBASE+$1ca ;can2 transmit buffer select
+01cb                    CAN2IDAC:        equ REGBASE+$1cb ;can2 identfier acceptance control
+                        
+01ce                    CAN2RERR:        equ REGBASE+$1ce ;can2 receive error counter
+01cf                    CAN2TERR:        equ REGBASE+$1cf ;can2 transmit error counter
+01d0                    CAN2IDA0:        equ REGBASE+$1d0 ;can2 identifier acceptance register 0
+01d1                    CAN2IDA1:        equ REGBASE+$1d1 ;can2 identifier acceptance register 1
+01d2                    CAN2IDA2:        equ REGBASE+$1d2 ;can2 identifier acceptance register 2
+01d3                    CAN2IDA3:        equ REGBASE+$1d3 ;can2 identifier acceptance register 3
+01d4                    CAN2IDM0:        equ REGBASE+$1d4 ;can2 identifier mask register 0
+01d5                    CAN2IDM1:        equ REGBASE+$1d5 ;can2 identifier mask register 1
+01d6                    CAN2IDM2:        equ REGBASE+$1d6 ;can2 identifier mask register 2
+01d7                    CAN2IDM3:        equ REGBASE+$1d7 ;can2 identifier mask register 3
+01d8                    CAN2IDA4:        equ REGBASE+$1d8 ;can2 identifier acceptance register 4
+01d9                    CAN2IDA5:        equ REGBASE+$1d9 ;can2 identifier acceptance register 5
+01da                    CAN2IDA6:        equ REGBASE+$1da ;can2 identifier acceptance register 6
+01db                    CAN2IDA7:        equ REGBASE+$1db ;can2 identifier acceptance register 7
+01dc                    CAN2IDM4:        equ REGBASE+$1dc ;can2 identifier mask register 4
+01dd                    CAN2IDM5:        equ REGBASE+$1dd ;can2 identifier mask register 5
+01de                    CAN2IDM6:        equ REGBASE+$1de ;can2 identifier mask register 6
+01df                    CAN2IDM7:        equ REGBASE+$1df ;can2 identifier mask register 7
+01e0                    CAN2RXFG:        equ REGBASE+$1e0 ;can2 rx foreground buffer thru +$1ef
+01f0                    CAN2TXFG:        equ REGBASE+$1f0 ;can2 tx foreground buffer thru +$1ff
+                        
+0200                    CAN3CTL0:        equ REGBASE+$200 ;can3 control register 0
+0201                    CAN3CTL1:        equ REGBASE+$201 ;can3 control register 1
+0202                    CAN3BTR0:        equ REGBASE+$202 ;can3 bus timing register 0
+0203                    CAN3BTR1:        equ REGBASE+$203 ;can3 bus timing register 1
+0204                    CAN3RFLG:        equ REGBASE+$204 ;can3 receiver flags
+0205                    CAN3RIER:        equ REGBASE+$205 ;can3 receiver interrupt enables
+0206                    CAN3TFLG:        equ REGBASE+$206 ;can3 transmit flags
+0207                    CAN3TIER:        equ REGBASE+$207 ;can3 transmit interrupt enables
+0208                    CAN3TARQ:        equ REGBASE+$208 ;can3 transmit message abort control
+0209                    CAN3TAAK:        equ REGBASE+$209 ;can3 transmit message abort status
+020a                    CAN3TBEL:        equ REGBASE+$20a ;can3 transmit buffer select
+020b                    CAN3IDAC:        equ REGBASE+$20b ;can3 identfier acceptance control
+                        
+020e                    CAN3RERR:        equ REGBASE+$20e ;can3 receive error counter
+020f                    CAN3TERR:        equ REGBASE+$20f ;can3 transmit error counter
+0210                    CAN3IDA0:        equ REGBASE+$210 ;can3 identifier acceptance register 0
+0211                    CAN3IDA1:        equ REGBASE+$211 ;can3 identifier acceptance register 1
+0212                    CAN3IDA2:        equ REGBASE+$212 ;can3 identifier acceptance register 2
+0213                    CAN3IDA3:        equ REGBASE+$213 ;can3 identifier acceptance register 3
+0214                    CAN3IDM0:        equ REGBASE+$214 ;can3 identifier mask register 0
+0215                    CAN3IDM1:        equ REGBASE+$215 ;can3 identifier mask register 1
+0216                    CAN3IDM2:        equ REGBASE+$216 ;can3 identifier mask register 2
+0217                    CAN3IDM3:        equ REGBASE+$217 ;can3 identifier mask register 3
+0218                    CAN3IDA4:        equ REGBASE+$218 ;can3 identifier acceptance register 4
+0219                    CAN3IDA5:        equ REGBASE+$219 ;can3 identifier acceptance register 5
+021a                    CAN3IDA6:        equ REGBASE+$21a ;can3 identifier acceptance register 6
+021b                    CAN3IDA7:        equ REGBASE+$21b ;can3 identifier acceptance register 7
+021c                    CAN3IDM4:        equ REGBASE+$21c ;can3 identifier mask register 4
+021d                    CAN3IDM5:        equ REGBASE+$21d ;can3 identifier mask register 5
+021e                    CAN3IDM6:        equ REGBASE+$21e ;can3 identifier mask register 6
+021f                    CAN3IDM7:        equ REGBASE+$21f ;can3 identifier mask register 7
+0220                    CAN3RXFG:        equ REGBASE+$220 ;can3 rx foreground buffer thru +$22f
+0230                    CAN3TXFG:        equ REGBASE+$230 ;can3 tx foreground buffer thru +$23f
+                        
+0240                    PTT:                equ REGBASE+$240 ;portt data register
+0241                    PTIT:                equ REGBASE+$241 ;portt input register
+0242                    DDRT:                equ REGBASE+$242 ;portt direction register
+0243                    RDRT:                equ REGBASE+$243 ;portt reduced drive register
+0244                    PERT:                equ REGBASE+$244 ;portt pull device enable
+0245                    PPST:                equ REGBASE+$245 ;portt pull polarity select
+                        
+0248                    PTS:                equ REGBASE+$248 ;ports data register
+0249                    PTIS:                equ REGBASE+$249 ;ports input register
+024a                    DDRS:                equ REGBASE+$24a ;ports direction register
+024b                    RDRS:                equ REGBASE+$24b ;ports reduced drive register
+024c                    PERS:                equ REGBASE+$24c ;ports pull device enable
+024d                    PPSS:                equ REGBASE+$24d ;ports pull polarity select
+024e                    WOMS:                equ REGBASE+$24e ;ports wired or mode register
+                        
+0250                    PTM:                equ REGBASE+$250 ;portm data register
+0251                    PTIM:                equ REGBASE+$251 ;portm input register
+0252                    DDRM:                equ REGBASE+$252 ;portm direction register
+0253                    RDRM:                equ REGBASE+$253 ;portm reduced drive register
+0254                    PERM:                equ REGBASE+$254 ;portm pull device enable
+0255                    PPSM:                equ REGBASE+$255 ;portm pull polarity select
+0256                    WOMM:                equ REGBASE+$256 ;portm wired or mode register
+0257                    MODRR:                equ REGBASE+$257 ;portm module routing register
+                        
+0258                    PTP:                equ REGBASE+$258 ;portp data register
+0259                    PTIP:                equ REGBASE+$259 ;portp input register
+025a                    DDRP:                equ REGBASE+$25a ;portp direction register
+025b                    RDRP:                equ REGBASE+$25b ;portp reduced drive register
+025c                    PERP:                equ REGBASE+$25c ;portp pull device enable
+025d                    PPSP:                equ REGBASE+$25d ;portp pull polarity select
+025e                    PIEP:                equ REGBASE+$25e ;portp interrupt enable register
+025f                    PIFP:                equ REGBASE+$25f ;portp interrupt flag register
+                        
+0260                    PTH:                equ REGBASE+$260 ;porth data register
+0261                    PTIH:                equ REGBASE+$261 ;porth input register
+0262                    DDRH:                equ REGBASE+$262 ;porth direction register
+0263                    RDRH:                equ REGBASE+$263 ;porth reduced drive register
+0264                    PERH:                equ REGBASE+$264 ;porth pull device enable
+0265                    PPSH:                equ REGBASE+$265 ;porth pull polarity select
+0266                    PIEH:                equ REGBASE+$266 ;porth interrupt enable register
+0267                    PIFH:                equ REGBASE+$267 ;porth interrupt flag register
+                        
+0268                    PTJ:                equ REGBASE+$268 ;portj data register
+0269                    PTIJ:                equ REGBASE+$269 ;portj input register
+026a                    DDRJ:                equ REGBASE+$26a ;portj direction register
+026b                    RDRJ:                equ REGBASE+$26b ;portj reduced drive register
+026c                    PERJ:                equ REGBASE+$26c ;portj pull device enable
+026d                    PPSJ:                equ REGBASE+$26d ;portj pull polarity select
+026e                    PIEJ:                equ REGBASE+$26e ;portj interrupt enable register
+026f                    PIFJ:                equ REGBASE+$26f ;portj interrupt flag register
+                        
+0280                    CAN4CTL0:        equ REGBASE+$280 ;can4 control register 0
+0281                    CAN4CTL1:        equ REGBASE+$281 ;can4 control register 1
+0282                    CAN4BTR0:        equ REGBASE+$282 ;can4 bus timing register 0
+0283                    CAN4BTR1:        equ REGBASE+$283 ;can4 bus timing register 1
+0284                    CAN4RFLG:        equ REGBASE+$284 ;can4 receiver flags
+0285                    CAN4RIER:        equ REGBASE+$285 ;can4 receiver interrupt enables
+0286                    CAN4TFLG:        equ REGBASE+$286 ;can4 transmit flags
+0287                    CAN4TIER:        equ REGBASE+$287 ;can4 transmit interrupt enables
+0288                    CAN4TARQ:        equ REGBASE+$288 ;can4 transmit message abort control
+0289                    CAN4TAAK:        equ REGBASE+$289 ;can4 transmit message abort status
+028a                    CAN4TBEL:        equ REGBASE+$28a ;can4 transmit buffer select
+028b                    CAN4IDAC:        equ REGBASE+$28b ;can4 identfier acceptance control
+                        
+028e                    CAN4RERR:        equ REGBASE+$28e ;can4 receive error counter
+028f                    CAN4TERR:        equ REGBASE+$28f ;can4 transmit error counter
+0290                    CAN4IDA0:        equ REGBASE+$290 ;can4 identifier acceptance register 0
+0291                    CAN4IDA1:        equ REGBASE+$291 ;can4 identifier acceptance register 1
+0292                    CAN4IDA2:        equ REGBASE+$292 ;can4 identifier acceptance register 2
+0293                    CAN4IDA3:        equ REGBASE+$293 ;can4 identifier acceptance register 3
+0294                    CAN4IDM0:        equ REGBASE+$294 ;can4 identifier mask register 0
+0295                    CAN4IDM1:        equ REGBASE+$295 ;can4 identifier mask register 1
+0296                    CAN4IDM2:        equ REGBASE+$296 ;can4 identifier mask register 2
+0297                    CAN4IDM3:        equ REGBASE+$297 ;can4 identifier mask register 3
+0298                    CAN4IDA4:        equ REGBASE+$298 ;can4 identifier acceptance register 4
+0299                    CAN4IDA5:        equ REGBASE+$299 ;can4 identifier acceptance register 5
+029a                    CAN4IDA6:        equ REGBASE+$29a ;can4 identifier acceptance register 6
+029b                    CAN4IDA7:        equ REGBASE+$29b ;can4 identifier acceptance register 7
+029c                    CAN4IDM4:        equ REGBASE+$29c ;can4 identifier mask register 4
+029d                    CAN4IDM5:        equ REGBASE+$29d ;can4 identifier mask register 5
+029e                    CAN4IDM6:        equ REGBASE+$29e ;can4 identifier mask register 6
+029f                    CAN4IDM7:        equ REGBASE+$29f ;can4 identifier mask register 7
+02a0                    CAN4RXFG:        equ REGBASE+$2a0 ;can4 rx foreground buffer thru +$2af
+02b0                    CAN4TXFG:        equ REGBASE+$2b0 ;can4 tx foreground buffer thru +$2bf
+                        
+                        * end registers
+                        #endinclude
+
+                        
+                        ;##--------------------------------  DEFINITIONS ------------------------------------
+                        ;##------------  STRUCT - FLAG INTRP VARIABLES --------------------------------------
+00ff                    i_n_element:    EQU $FF
+00fa                    VMAX:   EQU $FA  
+                        
+                        ;##------------  MAIN VARIABLES -----------------------------------------------------
+1000                            ORG  $1000
+1000 02                 MAX_TCL:        DB  2    ; How many digits has
+1001                    BANDERAS:       DS  1    
+1002                    Tecla:          DS  1    ; key entered
+1003                    Tecla_IN:       DS  1    ; valid entered key
+1004                    Cont_Reb:       DS  1    ; bounce counter
+1005                    Cont_TCL:       DS  1    ; entered key counter
+1006                    PATRON:         DS  1    ; keyboard's read path
+1007                    Num_Array:      DS  2    ; Sequence entered
+1009                    CUENTA:         DS  1   
+100a                    AcmPQ:          DS  1
+100b                    CantPQ:         DS  1
+100c                    TIMER_CUENTA:   DS  1
+100d                    LEDs:           DS  1
+100e                    BRILLO:         DS  1
+100f                    CONT_DIG:       DS  1
+1010                    CONT_TICKS:     DS  1
+1011                    DT:             DS  1 ; digits and port leds
+1012                    BIN1:           DS  1
+1013                    BIN2:           DS  1
+1014                    BCD_L:          DS  1
+1015                    LOW:            DS  1
+1016                    var_temp:       DS  1
+1017                    BCD1:           DS  1
+1018                    BCD2:           DS  1
+1019                    DISP1:          DS  1 ; var to load -> main
+101a                    DISP2:          DS  1 ; var to load -> main
+101b                    DISP3:          DS  1 ; var to load -> main
+101c                    DISP4:          DS  1 ; var to load -> main
+101d                    CONT_7SEG:      DS  2
+101f                    Cont_Delay:     DS  1
+1020 01                 clean_LCD:      DB  $01
+1021 80                 init_L1_LCD:    DB  $80
+1022 c0                 init_L2_LCD:    DB  $C0
+1023 64                 delay_2_ms:     DB  100
+1024 0d                 delay_260_us:   DB  13
+1025 02                 delay_40_us:    DB  2
+                        
+1030                            ORG  $1030
+1030 01 02 03 04 05 06  Teclas: DB  $01,$02,$03,$04,$05,$06,$07,$08,$09,$0B,$00,$0E 
+     07 08 09 0b 00 0e
+                        
+1040                            ORG  $1040
+1040 3f 06 5b 4f 66 6d  SEGMET: DB  $3f,$06,$5b,$4f,$66,$6d,$7d,$07,$7f,$6f
+     7d 07 7f 6f
+                        
+1050                            ORG  $1050
+1050 28 28 06 0c        iniDisp: DB  $28,$28,$06,$0C
+1054 ff                         DB  i_n_element
+                        
+                        ;##------------ TERMINAL MESSAGES ---------------------------------------------------------
+                        
+1080                            ORG $1080
+1080 20 20 20 4d 4f 44  PRINT_MODEConfig:     FCC "   MODO CONFIG  "
+     4f 20 43 4f 4e 46
+     49 47 20 20
+1090 ff                                 DB i_n_element
+                        
+1091 20 49 4e 47 52 45  PRINT_entrCant:     FCC " INGRESE CantPQ "
+     53 45 20 43 61 6e
+     74 50 51 20
+10a1 ff                                 DB i_n_element
+                        
+10a2 20 20 20 20 4d 4f  PRINT_MODERun:      FCC "    MODO RUN    "
+     44 4f 20 52 55 4e
+     20 20 20 20
+10b2 ff                                 DB i_n_element
+                        
+10b3 20 41 63 6d 50 51  PRINT_AcmPQCount:      FCC " AcmPQ   CUENTA  "
+     20 20 20 43 55 45
+     4e 54 41 20 20
+10c4 ff                                 DB i_n_element
+                        
+                        ;##------------ FLAG INTERRUPTION VECTORS  ---------------------------------------------------------
+3e4c                                    ORG    $3E4C
+3e4c 24 5c                              DW     PTH_ISR
+                                        
+3e66                                    ORG    $3E66
+3e66 24 ed                              DW     OC4_ISR
+                        
+3e70                                    ORG    $3E70
+3e70 24 48                              DW     RTI_ISR
+                        ;##--------- HARDWARE VARIABLES SETUP ----------------------------------------
+2000                            ORG   $2000            
+2000 cf 3b ff                   LDS   #$3BFF           ; stack pointer $3BFF
+                        ;##------------  KeyBoard -----------------------------------------------------
+2003 18 0b f0 00 02             MOVB  #$F0,DDRA        ; PH7-PH4 -> input ; PH3-PH0 -> output       
+2008 4c 0c 01                   BSET  PUCR,1           ; Pullup resistors activated 
+                        ;##------------  Screw sensor -----------------------------------------------------
+200b 4c 38 80                   BSET  CRGINT,$80       ; On - RTI
+200e 18 0b 17 00 3b             MOVB  #$17,RTICTL      ; M=1, N=7 RTI = 1ms
+                        ;##------------  LCD Screen -----------------------------------------------------
+2013 18 0b ff 00 33             MOVB #$FF, DDRK        ; PK7-PK0 -> outputs        
+                        ;##------------  7seg Screen -----------------------------------------------------
+2018 18 0b ff 00 03             MOVB  #$FF,DDRB        ; PB7-PB0 -> outputs (D7S config)
+201d 1c 02 6a 02                BSET  DDRJ,$02         ; enable - LED                                    
+2021 18 0b 0f 02 5a             MOVB  #$0F,DDRP        ; PP3-PP0 -> outputs
+                        ;##------------  PortH (AcmCLR, CuentaCLR) -----------------------------------------------------
+2026 1d 02 62 0f                BCLR  DDRH,%00001111   ; PH7, PH1-PH0 -> input    (H port)    
+202a 1c 02 66 0c                BSET  PIEH,%00001100   ; on - interrupt
+                        ;##------------  TIMER4/MODOSEL -----------------------------------------------------
+202e 4c 46 90                   BSET  TSCR1,%10010000  ; TEN = 1 ; TFFCA = 1.
+2031 4c 4d 04                   BSET  TSCR2,%00000100  ; Prescaler -> 16
+2034 18 0b 10 00 40             MOVB  #%00010000,TIOS  ; Output channel 4
+2039 18 0b 10 00 4c             MOVB  #%00010000,TIE   ; enable - OC4 interruption
+203e 10 ef                      CLI  
+                        ;##------------  Output SAL -----------------------------------------------------
+2040 4c 09 04                   BSET    DDRE,%00000100 ; PE2 -> out (relé)
+                        
+                        ;##--------- INIT VARIABLES ----------------------------------------
+2043                    _init_struct:  
+2043 18 0b 00 10 01             MOVB  #$00, BANDERAS
+2048 18 0b ff 10 02             MOVB  #$FF, Tecla         
+204d 18 0b ff 10 03             MOVB  #$FF, Tecla_IN
+2052 18 0b 00 10 04             MOVB  #$00, Cont_Reb
+2057 18 0b 00 10 05             MOVB  #$00, Cont_TCL
+205c 18 0b 00 10 06             MOVB  #$00, PATRON
+2061 ce 10 07                   LDX   #Num_Array          
+2064 18 08 01 ff                MOVB  #$FF,1,X
+2068 18 08 00 ff                MOVB  #$FF,0,X
+206c 18 0b 00 10 09             MOVB  #$00, CUENTA                
+2071 18 0b 00 10 0a             MOVB  #$00, AcmPQ
+2076 18 0b 00 10 0b             MOVB  #$00, CantPQ
+207b 18 0b fa 10 0c             MOVB  #VMAX, TIMER_CUENTA
+2080 18 0b 00 10 0d             MOVB  #$00,LEDs 
+2085 18 0b 32 10 0e             MOVB  #50, BRILLO  
+208a 18 0b 00 10 0f             MOVB  #$00, CONT_DIG      
+208f 18 0b 00 10 10             MOVB  #$00, CONT_TICKS
+2094 18 0b 00 10 12             MOVB  #$00, BIN1
+2099 18 0b 00 10 13             MOVB  #$00, BIN2   
+209e 18 03 00 00 10 1d          MOVW  #$00, CONT_7SEG
+20a4 18 0b 00 10 1f             MOVB  #$00, Cont_Delay    
+20a9 dc 44                      LDD   TCNT   
+20ab c3 00 1e                   ADDD  #30
+20ae 5c 58                      STD   TC4   
+                                                    
+                        ;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@
+                        ;##-------------------------------- MAIN ------------------------------------
+                        ;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@
+20b0 16 21 94                   JSR   LCD
+20b3 1c 10 01 10                BSET  BANDERAS,%00010000  ; CambMod = 1
+                        
+20b7                    MAIN_LOOP:
+20b7 f7 10 0b                   TST   CantPQ
+20ba 27 43                      BEQ   config_first
+20bc 1e 02 61 80 08             BRSET PTIH,%10000000,MODE_1 
+                        
+20c1                    MODE_0:
+20c1 1f 10 01 08 14             BRCLR BANDERAS,%00001000,Select_Mode  ; MODESEL  = ModActual
+20c6 06 20 ce                   JMP   Change_mode                     ; MODESEL != ModActual
+                        
+20c9                    MODE_1:
+20c9 1e 10 01 08 0c             BRSET BANDERAS,%00001000,Select_Mode  ; MODESEL  = ModActual
+                        
+20ce                    Change_mode:
+20ce 1c 10 01 10                BSET  BANDERAS,%00010000               ; CambMod = 1
+20d2 b6 10 01                   LDAA  BANDERAS                         
+20d5 88 08                      EORA  #$08
+20d7 7a 10 01                   STAA  BANDERAS                         ; ModActual = MODESEL
+                        
+20da                    Select_Mode:
+20da 1e 02 61 80 24             BRSET PTIH,%10000000,config_LCD          ; jumps if MODESEL = 1
+                        
+20df                    LCD_RUN:
+20df 1f 10 01 10 15             BRCLR BANDERAS,%00010000,switch_Mode  ; jumps if CambMod = 0
+20e4 4d 10 01                   BCLR  %00010000,BANDERAS              
+20e7 18 0b 01 10 0d             MOVB  #%00000001,LEDs 
+20ec 1c 02 66 03                BSET  PIEH,$03
+20f0 ce 10 a2                   LDX   #PRINT_MODERun
+20f3 cd 10 b3                   LDY   #PRINT_AcmPQCount
+20f6 16 21 bc                   JSR   CARGAR_LCD   
+                        
+20f9                    switch_Mode:
+20f9 16 21 63                   JSR   MODO_RUN                       
+20fc 06 20 b7                   JMP   MAIN_LOOP  
+                        
+20ff                    config_first:
+20ff 1c 10 01 08                BSET  BANDERAS,%00001000               ; ModActual = 1
+                        
+2103                    config_LCD:
+2103 1f 10 01 10 23             BRCLR BANDERAS,%00010000,switch_config_Mode ; jumps if CambMod = 0
+2108 1d 10 01 10                BCLR  BANDERAS,%00010000               ; CambMod = 0
+210c 18 0b 02 10 0d             MOVB  #%00000010,LEDs
+2111 18 0b 00 10 09             MOVB  #$00,CUENTA                           
+2116 18 0b 00 10 0a             MOVB  #$00,AcmPQ
+211b 4c 38 80                   BSET  CRGINT,$80  
+211e 1d 02 66 03                BCLR  PIEH,$03
+2122 ce 10 80                   LDX   #PRINT_MODEConfig
+2125 cd 10 91                   LDY   #PRINT_entrCant
+2128 16 21 bc                   JSR   CARGAR_LCD      
+                        
+212b                    switch_config_Mode:
+212b 16 21 31                   JSR   MODO_CONFIG                      
+212e 06 20 b7                   JMP   MAIN_LOOP   
+                        
+                        ;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@
+                        ;##-------------------------------- SUBROUTINES ------------------------------------
+                        ;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@;@@@@@@@@@@@@@
+                        ;##--------- MODO_CONFIG ----------------------------------------
+2131                    MODO_CONFIG:
+2131 18 0c 10 0b 10 12          MOVB   CantPQ,BIN1
+2137 1f 10 01 04 23             BRCLR  BANDERAS,%00000100,read_KeyBoard
+                                
+213c                    valid_CANTPQ:
+213c 16 22 ea                   JSR    BCD_BIN
+213f b6 10 0b                   LDAA   CantPQ
+2142 81 19                      CMPA   #25 ; screws
+2144 25 0f                      BCS    Notvalid_CANTPQ     
+2146 81 55                      CMPA   #85 ; screws
+2148 22 0b                      BHI    Notvalid_CANTPQ  
+                        
+214a                    ifvalid_CANTPQ:
+214a 1d 10 01 04                BCLR   BANDERAS,%00000100    ; clean ARRAY_OK
+214e 18 0c 10 0b 10 12          MOVB   CantPQ,BIN1   
+2154 3d                         RTS
+                        
+2155                    Notvalid_CANTPQ:
+2155 1d 10 01 04                BCLR   BANDERAS,%00000100    ; clean ARRAY_OK
+2159 18 0b 00 10 0b             MOVB   #0,CantPQ             ; CantPQ = 0
+215e 3d                         RTS
+                        
+215f                    read_KeyBoard:
+215f 16 23 3e                   JSR    TAREA_TECLADO
+2162 3d                         RTS
+                        
+                        ;##--------- MODO_RUN ----------------------------------------
+2163                    MODO_RUN:
+2163 f7 10 0c                   TST   TIMER_CUENTA
+2166 26 1f                      BNE   RTN_ModeRun
+                        
+2168                    CUENTA_Increase:
+2168 18 0b fa 10 0c             MOVB  #VMAX,TIMER_CUENTA ; set TIMER_CUENTA
+216d 72 10 09                   INC   CUENTA             
+2170 b6 10 0b                   LDAA  CantPQ
+2173 b1 10 09                   CMPA  CUENTA
+2176 27 06                      BEQ   on_Rele
+                        
+2178                    off_Rele:
+2178 4d 08 04                   BCLR  PORTE,%00000100    ; off - rele
+217b 06 21 87                   JMP   RTN_ModeRun
+                        
+217e                    on_Rele:
+217e 72 10 0a                   INC   AcmPQ
+2181 4c 08 04                   BSET  PORTE,%00000100    ; on - rele
+2184 4d 38 80                   BCLR  CRGINT,%10000000   ; off -  RTI
+                        
+2187                    RTN_ModeRun:
+2187 18 0c 10 09 10 12          MOVB CUENTA,BIN1         ; BIN1 <- (CUENTA)
+218d 18 0c 10 0a 10 13          MOVB AcmPQ,BIN2          ; BIN2 <- (AcmPQ)
+2193 3d                         RTS
+                        
+                        ;##--------- LCD Display ----------------------------------------  
+2194                    LCD:        
+2194 ce 10 50                   LDX   #iniDisp
+                        
+2197                    send_CMD:   
+2197 a6 30                      LDAA  1,X+
+2199 81 ff                      CMPA  #i_n_element
+219b 27 0f                      BEQ   return_LCD  
+219d 16 22 05                   JSR   Send_Command              
+21a0 18 0c 10 25 10 1f          MOVB  delay_40_us,Cont_Delay
+21a6 16 22 6b                   JSR   DELAY                     
+21a9 06 21 97                   JMP   send_CMD   
+                        
+21ac                    return_LCD:    
+21ac b6 10 20                   LDAA  clean_LCD                 
+21af 16 22 05                   JSR   Send_Command
+21b2 18 0c 10 23 10 1f          MOVB  delay_2_ms,Cont_Delay           
+21b8 16 22 6b                   JSR   DELAY
+21bb 3d                         RTS
+                        ;##--------- CARGAR_LCD ----------------------------------------  
+21bc                    CARGAR_LCD:    
+21bc b6 10 21                   LDAA  init_L1_LCD   ; set l1                   
+21bf 16 22 05                   JSR   Send_Command
+21c2 18 0c 10 25 10 1f          MOVB  delay_40_us,Cont_Delay
+21c8 16 22 6b                   JSR   DELAY
+                        
+21cb                    send_mgs_L1:
+21cb a6 30                      LDAA  1,X+                       
+21cd 81 ff                      CMPA  #i_n_element
+21cf 27 0f                      BEQ   set_L2
+21d1 16 22 38                   JSR   Send_Data
+21d4 18 0c 10 25 10 1f          MOVB  delay_40_us,Cont_Delay           
+21da 16 22 6b                   JSR   DELAY
+21dd 06 21 cb                   JMP   send_mgs_L1
+                        
+21e0                    set_L2:
+21e0 b6 10 22                   LDAA  init_L2_LCD
+21e3 16 22 05                   JSR   Send_Command              
+21e6 18 0c 10 25 10 1f          MOVB  delay_40_us,Cont_Delay
+21ec 16 22 6b                   JSR   DELAY
+                        
+21ef                    send_mgs_L2:
+21ef a6 70                      LDAA  1,Y+                      
+21f1 81 ff                      CMPA  #i_n_element
+21f3 27 0f                      BEQ   return_load_LCD
+21f5 16 22 38                   JSR   Send_Data
+21f8 18 0c 10 25 10 1f          MOVB  delay_40_us,Cont_Delay 
+21fe 16 22 6b                   JSR   DELAY
+2201 06 21 ef                   JMP   send_mgs_L2
+                        
+2204                    return_load_LCD: 
+2204 3d                         RTS
+                        
+                        ;##--------- SEND_COMMAND ----------------------------------------  
+2205                    SEND_COMMAND:
+2205 36                         PSHA                      ; stack A
+2206 84 f0                      ANDA  #$F0                ; select up level nibble
+2208 44                         LSRA
+2209 44                         LSRA                      ; X2 : 0 -> (A) -> C    
+220a 5a 32                      STAA  PORTK               ; high value  of cmd in PK   
+220c 4d 32 01                   BCLR  PORTK,%00000001                 
+220f 4c 32 02                   BSET  PORTK,%00000010                
+2212 18 0c 10 24 10 1f          MOVB  delay_260_us,Cont_Delay
+2218 16 22 6b                   JSR   DELAY               ; wait 260us (protocol)     
+221b 4d 32 02                   BCLR  PORTK,%00000010                  
+221e 32                         PULA                      ; unStack A
+221f 84 0f                      ANDA  #$0F
+2221 48                         LSLA
+2222 48                         LSLA                      ; X2 : 0 << (A) << C
+2223 5a 32                      STAA  PORTK               ; low value  of cmd in PK    
+2225 4d 32 01                   BCLR  PORTK,%00000001                   
+2228 4c 32 02                   BSET  PORTK,%00000010                  
+222b 18 0c 10 24 10 1f          MOVB  delay_260_us,Cont_Delay         
+2231 16 22 6b                   JSR   DELAY               ; wait 260us (protocol)     
+2234 4d 32 02                   BCLR  PORTK,%00000010                    
+2237 3d                         RTS
+                        
+                        ;##--------- SEND_DATA ----------------------------------------  
+2238                    SEND_DATA:
+2238 36                         PSHA                      ; Stack A
+2239 84 f0                      ANDA  #$F0                ; select up level nibble
+223b 44                         LSRA
+223c 44                         LSRA                      ; X2 : 0 >> (A) >> C
+223d 5a 32                      STAA  PORTK               ; high value  of cmd in PK   
+223f 4c 32 01                   BSET  PORTK,%00000001       
+2242 4c 32 02                   BSET  PORTK,%00000010                  
+2245 18 0c 10 24 10 1f          MOVB  delay_260_us,Cont_Delay     
+224b 16 22 6b                   JSR   DELAY               ; wait 260us (protocol)     
+224e 4d 32 02                   BCLR  PORTK,%00000010                    
+2251 32                         PULA                      ;unStack A
+2252 84 0f                      ANDA  #$0F
+2254 48                         LSLA
+2255 48                         LSLA                      ; X2 : 0 << (A) << C
+2256 5a 32                      STAA  PORTK               ; low value  of cmd in PK          
+2258 4c 32 01                   BSET  PORTK,%00000001                 
+225b 4c 32 02                   BSET  PORTK,%00000010                    
+225e 18 0c 10 24 10 1f          MOVB  delay_260_us,Cont_Delay        
+2264 16 22 6b                   JSR   DELAY              ; wait 260us (protocol)     
+2267 4d 32 02                   BCLR  PORTK,%00000010                  
+226a 3d                         RTS
+                        
+                        ;##--------- DELAY ----------------------------------------  
+226b                    DELAY:
+226b f7 10 1f                   TST  Cont_Delay
+226e 26 fb                      BNE  DELAY
+2270 3d                         RTS
+                        
+                        ;##--------- CONV_BIN_BCD ----------------------------------------  
+2271                    CONV_BIN_BCD:
+2271 79 10 17                   CLR   BCD1
+2274 79 10 18                   CLR   BCD2 
+2277 79 10 14                   CLR   BCD_L
+227a b6 10 12                   LDAA  BIN1
+227d 16 22 b1                   JSR   BIN_BCD
+2280 b6 10 14                   LDAA  BCD_L
+2283 84 f0                      ANDA  #$F0
+2285 26 08                      BNE   save_BCD1
+2287 b6 10 14                   LDAA  BCD_L
+228a 8b b0                      ADDA  #$B0
+228c 7a 10 14                   STAA  BCD_L
+                        
+228f                    save_BCD1:
+228f 18 0c 10 14 10 17          MOVB  BCD_L,BCD1
+2295 b6 10 13                   LDAA  BIN2
+2298 16 22 b1                   JSR   BIN_BCD
+229b b6 10 14                   LDAA  BCD_L
+229e 84 f0                      ANDA  #$F0
+22a0 26 08                      BNE   save_BCD2
+22a2 b6 10 14                   LDAA  BCD_L
+22a5 8b b0                      ADDA  #$B0
+22a7 7a 10 14                   STAA  BCD_L
+                        
+22aa                    save_BCD2:
+22aa 18 0c 10 14 10 18          MOVB  BCD_L,BCD2
+22b0 3d                         RTS
+                        
+                        
+                        ;##--------- BIN_BCD ----------------------------------------  
+22b1                    BIN_BCD:
+22b1 cd 00 07                   LDY   #7
+22b4 18 0b 00 10 14             MOVB  #0,BCD_L
+                        
+22b9                    loop_BIN_BCD:
+22b9 48                         LSLA
+22ba 75 10 14                   ROL   BCD_L             
+22bd 7a 10 16                   STAA  var_temp
+                        
+22c0                    ifcheck_Nibbles:
+22c0 86 0f                      LDAA  #$0F              
+22c2 b4 10 14                   ANDA  BCD_L
+22c5 81 05                      CMPA  #$5
+22c7 25 02                      BCS   No_add_N0     ; jump if Nibbe_low < 5  
+22c9 8b 03                      ADDA  #$3               ; Nibbe_low -> up 3 
+                        
+22cb                    No_add_N0:
+22cb 7a 10 15                   STAA  LOW
+22ce 86 f0                      LDAA  #$F0
+22d0 b4 10 14                   ANDA  BCD_L
+22d3 81 50                      CMPA  #$50
+22d5 25 02                      BCS   No_add_N1    
+22d7 8b 30                      ADDA  #$30             
+                        
+22d9                    No_add_N1:
+22d9 bb 10 15                   ADDA  LOW
+22dc 7a 10 14                   STAA  BCD_L
+22df b6 10 16                   LDAA  var_temp
+22e2 04 36 d4                   DBNE  Y,loop_BIN_BCD    ; jumps if y != 0 
+22e5 48                         LSLA
+22e6 75 10 14                   ROL   BCD_L            
+22e9 3d                         RTS
+                        
+                        ;##--------- BCD_BIN ----------------------------------------
+22ea                    BCD_BIN:
+22ea ce 10 07                   LDX   #Num_Array
+22ed e6 30                      LDAB  1,X+    
+22ef 86 0a                      LDAA  #10                       
+22f1 12                         MUL              ; tens dgiti * 10   
+22f2 eb 30                      ADDB  1,X+       ; unit + result                   
+22f4 7b 10 0b                   STAB  CantPQ     ; store in CantPQ
+22f7 3d                         RTS        
+                        
+                        ;##--------- BCD_7SEG ----------------------------------------  
+                        ;       DSP1 and DSP2 ----- DSP3 and DSP4
+                        ;           BCD2      -----      BCD1 
+22f8                    BCD_7SEG:
+22f8 ce 10 40                   LDX  #SEGMET 
+                        
+22fb                    set_DISP1:
+22fb 18 0b 00 10 19             MOVB #0,DISP1   ;  DISP1 = 0
+2300 b6 10 18                   LDAA BCD2
+2303 84 f0                      ANDA #$F0
+2305 81 b0                      CMPA #$B0
+2307 27 09                      BEQ  set_DISP2  ; if != 0 load value in SEGMENT
+2309 44                         LSRA           
+230a 44                         LSRA
+230b 44                         LSRA
+230c 44                         LSRA
+230d 18 0d e4 10 19             MOVB A,X,DISP1  ; load DISP1
+                        
+2312                    set_DISP2:
+2312 b6 10 18                   LDAA BCD2
+2315 84 0f                      ANDA #$0F
+2317 18 0d e4 10 1a             MOVB A,X,DISP2  ; load DISP2
+                        
+231c                    set_DISP3:
+231c 18 0b 00 10 1b             MOVB #0,DISP3   ; DISP3 = 0
+2321 b6 10 17                   LDAA BCD1
+2324 84 f0                      ANDA #$F0
+2326 81 b0                      CMPA #$B0
+2328 27 09                      BEQ  set_DISP4  ;  if != 0 load value in SEGMENT
+232a 44                         LSRA            
+232b 44                         LSRA
+232c 44                         LSRA
+232d 44                         LSRA
+232e 18 0d e4 10 1b             MOVB A,X,DISP3  ;  load DISP3
+                        
+2333                    set_DISP4:
+2333 86 0f                      LDAA #$0F
+2335 b4 10 17                   ANDA BCD1
+2338 18 0d e4 10 1c             MOVB A,X,DISP4  ; load DISP4
+233d 3d                         RTS
+                        
+                        ;##--------- TAREA_TECLADO ----------------------------------------
+233e                    TAREA_TECLADO: 
+233e f7 10 04                   TST    Cont_Reb
+2341 26 53                      BNE    return_TAREA                    
+2343 16 23 97                   JSR    MUX_TECLADO
+2346 86 ff                      LDAA   #$FF
+2348 b1 10 02                   CMPA   Tecla
+234b 26 08                      BNE    press_KEY      
+234d 1e 10 01 01 3a             BRSET  BANDERAS,%00000001,add_KEY    
+2352 06 23 96                   JMP    return_TAREA
+                        
+2355                    press_KEY:
+2355 1e 10 01 02 12             BRSET  BANDERAS,%00000010,processed_KEY  
+235a 18 0c 10 02 10 03          MOVB   Tecla,Tecla_IN
+2360 1c 10 01 02                BSET   BANDERAS,%00000010                  ; read key 
+2364 18 0b 0a 10 04             MOVB   #$0A,Cont_Reb
+2369 06 23 96                   JMP    return_TAREA
+                        
+236c                    processed_KEY: 
+236c f6 10 02                   LDAB   Tecla
+236f f1 10 03                   CMPB   Tecla_IN
+2372 27 11                      BEQ    ready_KEY
+                        
+2374                    read_ERROR:
+2374 18 0b ff 10 02             MOVB   #$FF,Tecla
+2379 18 0b ff 10 03             MOVB   #$FF,Tecla_IN
+237e 1d 10 01 03                BCLR   BANDERAS,%00000011
+2382 06 23 96                   JMP    return_TAREA
+                        
+2385                    ready_KEY:
+2385 1c 10 01 01                BSET   BANDERAS,%00000001                  ; key ready  
+2389 06 23 96                   JMP    return_TAREA
+                        
+238c                    add_KEY: 
+238c 1d 10 01 03                BCLR   BANDERAS,%00000011
+2390 16 23 d8                   JSR    FORMAR_ARRAY
+2393 06 23 96                   JMP    return_TAREA
+                        
+2396                    return_TAREA:
+2396 3d                         RTS
+                        
+                        ;##--------- MUX_TECLADO ----------------------------------------
+2397                    MUX_TECLADO:
+2397 ce 10 30                   LDX    #Teclas
+239a 86 00                      LDAA   #$00
+239c c6 f0                      LDAB   #$F0
+239e 18 0b ef 10 06             MOVB   #$EF,PATRON
+23a3 a7                         NOP
+23a4 a7                         NOP
+23a5 a7                         NOP
+23a6 a7                         NOP
+23a7 a7                         NOP
+23a8 a7                         NOP
+23a9 a7                         NOP
+                        
+23aa                    scan_MATX:
+23aa 18 0c 10 06 00 00          MOVB   PATRON, PORTA
+23b0 4f 00 02 1e                BRCLR  PORTA,%00000010, COL_1 ; ; some column  of the row selected is in low?
+23b4 4f 00 04 19                BRCLR  PORTA,%00000100, COL_2 
+23b8 4f 00 08 14                BRCLR  PORTA,%00001000, COL_3 
+23bc 8b 03                      ADDA   #3            ; for index key            
+23be 78 10 06                   LSL    PATRON       
+23c1 c6 f0                      LDAB   #$F0
+23c3 f1 10 06                   CMPB   PATRON
+23c6 26 e2                      BNE    scan_MATX    
+23c8 18 0b ff 10 02             MOVB   #$FF, Tecla   ; no key entered
+23cd 06 23 d7                   JMP    RETURN_MUX
+23d0                    COL_3:
+23d0 42                         INCA       ; column 3 + 2
+23d1                    COL_2:
+23d1 42                         INCA       ; column 2 + 1
+23d2                    COL_1: 
+23d2 18 0d e4 10 02             MOVB A,X,Tecla    ; save value of key enter
+                        
+23d7                    RETURN_MUX:   
+23d7 3d                         RTS   
+                        
+                        ;##--------- FORMAR_ARRAY ----------------------------------------
+23d8                    FORMAR_ARRAY: 
+23d8 b6 10 05                   LDAA  Cont_TCL
+23db b1 10 00                   CMPA  MAX_TCL
+23de 26 11                      BNE   notLast_TCL 
+                        
+23e0                    Last_TCL:   
+23e0 86 0b                      LDAA  #$0B
+23e2 b1 10 03                   CMPA  Tecla_IN    
+23e5 27 31                      BEQ   BORRAR 
+23e7 86 0e                      LDAA  #$0E
+23e9 b1 10 03                   CMPA  Tecla_IN 
+23ec 27 3a                      BEQ   ENTER
+23ee 06 24 42                   JMP   return_FORMAR_ARRAY
+                        
+23f1                    notLast_TCL: 
+23f1 f7 10 05                   TST   Cont_TCL
+23f4 27 11                      BEQ   First_TCL
+                        
+23f6                    notFirst_TCL:  
+23f6 86 0b                      LDAA  #$0B
+23f8 b1 10 03                   CMPA  Tecla_IN    
+23fb 27 1b                      BEQ   BORRAR 
+23fd 86 0e                      LDAA  #$0E
+23ff b1 10 03                   CMPA  Tecla_IN    
+2402 27 24                      BEQ   ENTER
+2404 06 24 34                   JMP   save_TCL
+                        
+2407                    First_TCL:    
+2407 86 0b                      LDAA  #$0B
+2409 b1 10 03                   CMPA  Tecla_IN 
+240c 27 34                      BEQ   return_FORMAR_ARRAY 
+240e 86 0e                      LDAA  #$0E
+2410 b1 10 03                   CMPA  Tecla_IN    
+2413 27 2d                      BEQ   return_FORMAR_ARRAY
+2415 06 24 34                   JMP   save_TCL
+                        
+2418                    BORRAR:   
+2418 73 10 05                   DEC   Cont_TCL
+241b ce 10 07                   LDX   #Num_Array
+241e b6 10 05                   LDAA  Cont_TCL
+2421 18 08 e4 ff                MOVB  #$FF,A,X
+2425 06 24 42                   JMP   return_FORMAR_ARRAY
+                        
+2428                    ENTER:    
+2428 1c 10 01 04                BSET  BANDERAS,%00000100                  ; Array Ok
+242c 18 0b 00 10 05             MOVB  #$00,Cont_TCL
+2431 06 24 42                   JMP   return_FORMAR_ARRAY
+                        
+2434                    save_TCL:  
+2434 b6 10 05                   LDAA  Cont_TCL
+2437 ce 10 07                   LDX   #Num_Array
+243a 18 09 e4 10 03             MOVB  Tecla_IN,A,X 
+243f 72 10 05                   INC   Cont_TCL
+                        
+2442                    return_FORMAR_ARRAY:   
+2442 18 0b ff 10 03             MOVB  #$FF,Tecla_IN
+2447 3d                         RTS
+                        
+                        ;##--------- RTI_ISR (INTERRUPTION) ----------------------------------------
+2448                    RTI_ISR:
+2448 4c 37 80                   BSET  CRGFLG, %10000000
+244b f7 10 0c                   TST   TIMER_CUENTA
+244e 27 03                      BEQ   Check_Cont_Reb    
+2450 73 10 0c                   DEC   TIMER_CUENTA   ; TIMER_CUENTA != 0 => TIMER_CUENTA--
+                        
+2453                    Check_Cont_Reb:
+2453 f7 10 04                   TST   Cont_Reb
+2456 27 03                      BEQ   return_RTI
+2458 73 10 04                   DEC   Cont_Reb       ; Cont_Reb != 0 => Cont_Reb
+                        
+245b                    return_RTI:
+245b 0b                         RTI
+                        
+                        
+                        ;##------- >>> -------------------- >>> ------- PTH_ISR (INTERRUPTION) ----------------------------------------
+245c                    PTH_ISR:    
+245c f7 10 04                   TST     Cont_Reb
+245f 27 35                      BEQ     PROC_PHO
+2461 18 0b 0a 10 04             MOVB    #10,Cont_Reb  
+                        
+                        
+                        ;##--------- BOUNCE SUPPRESSION  ----------------------------------------  
+2466                    PROC_REB: 
+2466 1e 02 67 01 0f             BRSET   PIFH,%00000001,REB_PH0 
+246b 1e 02 67 02 11             BRSET   PIFH,%00000010,REB_PH1
+2470 1e 02 67 04 13             BRSET   PIFH,%00000100,REB_PH2
+2475 1e 02 67 08 15             BRSET   PIFH,%00001000,REB_PH3
+                        
+247a                    REB_PH0:  
+247a 1c 02 67 01                BSET  PIFH,%00000001
+247e 06 24 ec                   JMP   return_PTH
+                        
+2481                    REB_PH1:  
+2481 1c 02 67 02                BSET  PIFH,%00000010
+2485 06 24 ec                   JMP   return_PTH
+                        
+2488                    REB_PH2:   
+2488 1c 02 67 04                BSET  PIFH,%00000100
+248c 06 24 ec                   JMP   return_PTH
+                        
+248f                    REB_PH3:
+248f 1c 02 67 08                BSET  PIFH,%00001000
+2493 06 24 ec                   JMP   return_PTH
+                        
+                        
+                        ;##---------  INTERRUPTION PROCESSING ----------------------------------------  
+2496                    PROC_PHO:  
+2496 1e 02 67 04 2d             BRSET   PIFH,%00000100,decrease_BRILLO
+249b 1e 02 67 08 3c             BRSET   PIFH,%00001000,increase_BRILLO
+24a0 1e 02 67 01 08             BRSET   PIFH,%00000001,push_PHO 
+24a5 1e 02 67 02 12             BRSET   PIFH,%00000010,push_PH1
+24aa 06 24 ec                   JMP     return_PTH
+                        
+24ad                    push_PHO:
+24ad 1c 02 67 01                BSET  PIFH,%00000001
+24b1 18 0b 00 10 09             MOVB  #0,CUENTA                            
+24b6 4c 38 80                   BSET  CRGINT,$80                        
+24b9 06 24 ec                   JMP   return_PTH
+                        
+24bc                    push_PH1:
+24bc 1c 02 67 02                BSET  PIFH,%00000010
+24c0 18 0b 00 10 0a             MOVB  #0,AcmPQ                         
+24c5 06 24 ec                   JMP   return_PTH
+                        
+24c8                    decrease_BRILLO: 
+24c8 1c 02 67 04                BSET  PIFH,%00000100
+24cc f7 10 0e                   TST   BRILLO                         
+24cf 27 1b                      BEQ   return_PTH
+24d1 b6 10 0e                   LDAA  BRILLO
+24d4 80 05                      suba  #5
+24d6 7a 10 0e                   STAA  BRILLO
+24d9 06 24 ec                   JMP   return_PTH
+                        
+24dc                    increase_BRILLO: 
+24dc 1c 02 67 08                BSET  PIFH,%00001000
+24e0 b6 10 0e                   LDAA  BRILLO                          
+24e3 81 64                      CMPA  #100
+24e5 27 05                      BEQ   return_PTH
+24e7 8b 05                      ADDA  #5
+24e9 7a 10 0e                   STAA  BRILLO
+                        
+24ec                    return_PTH: 
+24ec 0b                         RTI
+                        
+                        ;##--------- OC4_ISR (INTERRUPTION) ----------------------------------------  
+24ed                    OC4_ISR:
+24ed fc 10 1d                   LDD   CONT_7SEG
+24f0 8c 13 88                   CPD   #5000
+24f3 27 09                      BEQ   Update_DisplaySeg
+                        
+24f5                    CONT_7SEG_increase:
+24f5 c3 00 01                   ADDD  #1
+24f8 7c 10 1d                   STD   CONT_7SEG
+24fb 06 25 0a                   JMP   Update_ContDelay
+                        
+24fe                    Update_DisplaySeg:
+24fe 18 03 00 00 10 1d          MOVW  #0,CONT_7SEG
+2504 16 22 71                   JSR   CONV_BIN_BCD
+2507 16 22 f8                   JSR   BCD_7SEG
+                        
+250a                    Update_ContDelay:
+250a f7 10 1f                   TST   Cont_Delay
+250d 27 03                      BEQ   MULTIPLEXER
+                        
+250f                    decrease_ContDelay:
+250f 73 10 1f                   DEC   Cont_Delay
+                         
+                        ;##---------  MULTIPLEXATION ----------------------------------------  
+2512                    MULTIPLEXER: 
+2512 b6 10 10                   LDAA  CONT_TICKS
+2515 81 64                      CMPA  #100
+2517 27 1c                      BEQ   select_Display
+                        
+2519                    RT_BRILLO:     
+2519 c6 64                      LDAB  #100
+251b f0 10 0e                   SUBB  BRILLO
+251e 7b 10 11                   STAB  DT
+2521 f1 10 10                   CMPB  CONT_TICKS
+2524 26 09                      BNE   increase_CONT_TICKS
+2526 18 0b ff 02 58             MOVB  #$FF,PTP          
+252b 1c 02 68 02                BSET  PTJ,$02 
+                        
+252f                    increase_CONT_TICKS:
+252f 72 10 10                   INC   CONT_TICKS
+2532 06 25 ba                   JMP   return_OC4
+                        
+2535                    select_Display:  
+2535 b6 10 0f                   LDAA  CONT_DIG
+2538 81 04                      CMPA  #4        
+253a 27 4d                      BEQ   select_LEDS
+253c 1c 02 68 02                BSET  PTJ,$02
+2540 81 03                      CMPA  #3        
+2542 27 37                      BEQ   select_DISP4
+2544 81 02                      CMPA  #2        
+2546 27 25                      BEQ   select_DISP3
+2548 1e 10 01 08 4e             BRSET BANDERAS,%00001000,M_CONF
+254d 81 01                      CMPA  #1        
+254f 27 0e                      BEQ   select_DISP2 
+                        
+2551                    select_DISP1:     
+2551 18 0b fe 02 58             MOVB  #$FE,PTP
+2556 18 0c 10 19 00 01          MOVB  DISP1,PORTB  
+255c 06 25 a3                   JMP   increase_contDig
+                        
+255f                    select_DISP2:
+255f 18 0b fd 02 58             MOVB  #$FD,PTP
+2564 18 0c 10 1a 00 01          MOVB  DISP2,PORTB  
+256a 06 25 a3                   JMP   increase_contDig
+                        
+256d                    select_DISP3:
+256d 18 0b fb 02 58             MOVB  #$FB,PTP
+2572 18 0c 10 1b 00 01          MOVB  DISP3,PORTB  
+2578 06 25 a3                   JMP   increase_contDig
+                        
+257b                    select_DISP4:
+257b 18 0b f7 02 58             MOVB  #$F7,PTP
+2580 18 0c 10 1c 00 01          MOVB  DISP4,PORTB  
+2586 06 25 a3                   JMP   increase_contDig
+                        
+2589                    select_LEDS:
+2589 18 0b 0f 02 58             MOVB  #$0F,PTP                
+258e 18 0c 10 0d 00 01          MOVB  LEDs,PORTB           
+2594 1d 02 68 02                BCLR  PTJ,$02
+2598 06 25 a3                   JMP   increase_contDig   
+                        
+259b                    M_CONF:
+259b 18 0b ff 02 58             MOVB  #$FF,PTP
+25a0 06 25 a3                   JMP   increase_contDig
+                        
+25a3                    increase_contDig:
+25a3 18 0b 00 10 10             MOVB  #0,CONT_TICKS
+25a8 b6 10 0f                   LDAA  CONT_DIG
+25ab 81 04                      CMPA  #4
+25ad 27 06                      BEQ   RST_CONT_DIG
+25af 72 10 0f                   INC   CONT_DIG
+25b2 06 25 ba                   JMP   return_OC4
+                        
+25b5                    RST_CONT_DIG:
+25b5 18 0b 00 10 0f             MOVB  #$00,CONT_DIG
+                        
+25ba                    return_OC4:
+25ba dc 44                      LDD  TCNT
+25bc c3 00 1e                   ADDD #30
+25bf 5c 58                      STD  TC4
+25c1 0b                         RTI
+
+Executed: Sun Feb 14 22:53:53 2021
+Total cycles: 1614, Total bytes: 1583
+Total errors: 0, Total warnings: 0
