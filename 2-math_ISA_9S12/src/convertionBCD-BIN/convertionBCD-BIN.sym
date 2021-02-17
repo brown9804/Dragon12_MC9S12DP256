@@ -1,0 +1,23 @@
+_bcd_bin   2084
+_bcd_bin_comp4bytes 208a
+_bcd_bin_comp_b 208f
+_bcd_bin_comp_c 20a1
+_bcd_bin_end 20c3
+_bcd_bin_last_comp 20af
+_bcd_bin_tranforma 20b4
+_bcd_bin_tranformb 2094
+_bin_bcd   2018
+_init      1104
+b_val      1102
+bcd        1002
+bcdtobin   2009
+bin        1000
+comp4bytes 2024
+comp_b     2039
+comp_c     2049
+final_end  2015
+num_bcd    1010
+num_bin    1020
+storenum_bcd 2063
+tail_val   1100
+x_0_value  207a
