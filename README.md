@@ -11,6 +11,8 @@ projects using a Dragon 12 board.
 Need to install the simulator and some driver, inside "dependencies" folder is explained how to install.
 
 ## Projects:
+### 0. env_std_tester [Assembly]
+This folder contains the standard test files for the  Dragon 12 board.
 
 ### 1. ep_AppDev [Assembly]
 This work analyzes what are embedded processors, 
