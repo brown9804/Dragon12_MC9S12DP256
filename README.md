@@ -42,3 +42,14 @@ conversion example, ATD external trigger, and ATD port as digital inputs.
 This work encompasses the Asynchronous Serial communication application. 
 SCI Interface: concepts of serial communication, the Serial Communication Interface 
 (SCI), configuration of the SCI Interface and operation of the SCI Interface.
+
+### 7. syncr_commu [MarkDown]
+Synchronous serial communication:
+
+1.Principle of the operation of synchronous communication.
+
+
+2.Serial Port Interface (SPI): SPI hardware interface, 9S12 SPI interface, S12 SPI interface configuration, Bidirectional Mode configuration, the LTC1661, sawtooth generator.
+
+
+3.IIC Interface: Inter Bus hardware interface, Inter Bus protocol, IIC interface configuration of 9S12, RTC DS1207.
