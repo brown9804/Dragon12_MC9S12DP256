@@ -4,4 +4,4 @@ timna.brown@ucr.ac.cr
 
 What for?
 
-This folder contains the markdown document.
+This folder contains the markdown document and pdf.
