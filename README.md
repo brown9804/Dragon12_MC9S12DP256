@@ -53,3 +53,9 @@ Synchronous serial communication:
 
 
 3.IIC Interface: Inter Bus hardware interface, Inter Bus protocol, IIC interface configuration of 9S12, RTC DS1207.
+
+### 8. runmeter623 [Assembly]
+A system is implemented for the display of information in a velodrome. The system, called RunMeter 623, has two photoreflective presence sensors, a 4-digit 7-segment display and a 2x16 LCD display. In this figure it can be seen that the system has two photoreflective presence sensors to detect the bicycles, 55 meters apart and a screen, located 300 meters from the S2 sensor, to present the speed of the bicycle calculated in Km / h and the number of laps traveled.
+
+The sensors emit an infrared signal across the track to a receiver on the other side of the track. When a cyclist passes, the beam is interrupted at the first sensor and a signal is sent to the controller. When the first sensor is passed, the count of the time required by the cyclist to reach the second sensor begins. With this time and with the distance between the sensors, a calculation is made of the cyclist's average speed, in km / h. This speed is presented to the rider on the screen.
+
