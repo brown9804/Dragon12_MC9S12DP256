@@ -7,6 +7,10 @@ projects using a Dragon 12 board.
 ## University of Costa Rica
 #### January, 2021
 
+![alt text](https://github.com/brown9804/Dragon12_MC9S12DP256/blob/main/8_runmeter623/docs/base_ref/Dragon12%2B_front.png?raw=true)
+
+
+
 ## Dependencies
 Need to install the simulator and some driver, inside "dependencies" folder is explained how to install.
 
