@@ -7,3 +7,5 @@
 2. Install the simulator using MasterInstaller.exe then
     - Install Java 
     - Install Text and Simulator 
+
+Consider Code Warrior: http://www.evbplus.com/Code_Warrior_hcs12.html
